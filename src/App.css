@@ -589,23 +589,21 @@ button.danger:hover:not(:disabled) {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
-/* Card Modal Overlay (mobile) */
-.card-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+/* Card popup (touch devices) */
+.card-popup-touch {
+  left: 50%;
+  transform: translateX(-50%);
+  margin-left: 0;
+  top: 100%;
+  margin-top: 6px;
+  pointer-events: none;
 }
 
-.card-modal-img {
-  max-width: 90vw;
-  max-height: 85vh;
-  border-radius: 12px;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.8);
+.card-popup-touch.popup-above {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 6px;
 }
 
 /* Battlefield Panel */

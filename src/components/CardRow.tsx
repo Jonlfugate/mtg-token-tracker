@@ -183,12 +183,30 @@ export const CardRow = memo(function CardRow({
     setShowImage(true);
   };
 
+  const [popupAbove, setPopupAbove] = useState(false);
+
   const handleTap = useCallback((e: React.MouseEvent) => {
     if (!isTouchDevice()) return;
     const target = e.target as HTMLElement;
     if (target.closest('button, input, label, .token-thumb')) return;
+    if (rowRef.current) {
+      const rect = rowRef.current.getBoundingClientRect();
+      setPopupAbove(rect.bottom + 350 > window.innerHeight);
+    }
     setShowImage(prev => !prev);
   }, []);
+
+  // Close card popup on outside tap
+  useEffect(() => {
+    if (!showImage || !isTouchDevice()) return;
+    const close = (e: TouchEvent) => {
+      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
+        setShowImage(false);
+      }
+    };
+    document.addEventListener('touchstart', close);
+    return () => document.removeEventListener('touchstart', close);
+  }, [showImage]);
 
   return (
     <div
@@ -316,8 +334,8 @@ export const CardRow = memo(function CardRow({
       )}
 
       {showImage && imageUri && isTouchDevice() && (
-        <div className="card-modal-overlay" onClick={() => setShowImage(false)}>
-          <img src={imageUri} alt={card.scryfallData.name} className="card-modal-img" />
+        <div className={`card-image-popup card-popup-touch${popupAbove ? ' popup-above' : ''}`}>
+          <img src={imageUri} alt={card.scryfallData.name} />
         </div>
       )}
     </div>
