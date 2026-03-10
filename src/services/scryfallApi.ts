@@ -57,14 +57,16 @@ async function fetchTokenCard(uri: string): Promise<FetchedTokenResult> {
     if (!res.ok) return { art: null, data: null };
     const raw = await res.json();
     const data = raw as ScryfallCard;
-    const imageUrl = data.image_uris?.art_crop
-      || data.card_faces?.[0]?.image_uris?.art_crop
-      || data.image_uris?.normal
+    const artCrop = data.image_uris?.art_crop
+      || data.card_faces?.[0]?.image_uris?.art_crop;
+    const normalImg = data.image_uris?.normal
       || data.card_faces?.[0]?.image_uris?.normal;
+    const imageUrl = artCrop || normalImg;
 
     const art: TokenArt | null = imageUrl ? {
       name: data.name,
       imageUrl,
+      normalUrl: normalImg || undefined,
       typeLine: data.type_line,
       power: raw.power || undefined,
       toughness: raw.toughness || undefined,

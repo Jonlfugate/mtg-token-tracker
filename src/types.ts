@@ -51,7 +51,8 @@ export interface ScryfallTokenData {
 
 export interface TokenArt {
   name: string;
-  imageUrl: string;  // art_crop or normal
+  imageUrl: string;  // art_crop
+  normalUrl?: string; // full card image (normal)
   typeLine: string;
   power?: string;
   toughness?: string;

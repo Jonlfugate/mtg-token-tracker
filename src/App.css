@@ -180,6 +180,19 @@ button.danger:hover:not(:disabled) {
   background: #b91c1c;
 }
 
+.play-btn-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.play-counter {
+  font-size: 0.65rem;
+  color: #888;
+  font-weight: 600;
+}
+
 .play-btn {
   background: #059669;
   color: white;
@@ -324,6 +337,19 @@ button.danger:hover:not(:disabled) {
   transform: rotate(-90deg);
 }
 
+.type-subgroup {
+  margin-bottom: 0.35rem;
+}
+
+.type-subgroup-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #777;
+  margin: 0.3rem 0 0.15rem 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 /* Card Row */
 .card-row {
   display: flex;
@@ -437,6 +463,83 @@ button.danger:hover:not(:disabled) {
   border-radius: 3px;
 }
 
+/* Token Thumbnails (compact mode) */
+.token-thumbs {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.token-thumb {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.token-thumb-img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #444;
+  transition: border-color 0.15s;
+}
+
+.token-thumb:hover .token-thumb-img {
+  border-color: #8b5cf6;
+}
+
+.token-thumb-text {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2a2a3e;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #aaa;
+}
+
+.token-thumb-popup {
+  position: absolute;
+  z-index: 110;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 6px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.token-thumb-popup.popup-above {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 6px;
+}
+
+.token-thumb-popup img {
+  width: 160px;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+
+.token-thumb-popup-label {
+  background: rgba(0, 0, 0, 0.85);
+  color: #e0e0e0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
 .support-info {
   font-size: 0.7rem;
   color: #fbbf24;
@@ -478,6 +581,11 @@ button.danger:hover:not(:disabled) {
   left: 100%;
   margin-left: 10px;
   pointer-events: none;
+}
+
+.card-image-popup.popup-above {
+  top: auto;
+  bottom: -10px;
 }
 
 .card-image-popup img {

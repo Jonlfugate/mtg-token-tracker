@@ -331,6 +331,7 @@ export function Battlefield() {
                       triggerLabel={triggerLabel}
                       conditions={conditions}
                       onToggleCondition={(tokenName) => dispatch({ type: 'TOGGLE_CONDITION', payload: { instanceId, tokenName } })}
+                      compact
                     />
                   );
                 });
