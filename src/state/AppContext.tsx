@@ -22,7 +22,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...t,
         createdOnTurn: t.createdOnTurn ?? 0,
       }));
-      return { ...initialState, ...saved, standaloneTokens: tokens, currentTurn: saved.currentTurn ?? 1, pendingPopulate: 0 } as AppState;
+      return { ...initialState, ...saved, standaloneTokens: tokens, currentTurn: saved.currentTurn ?? 1, pendingPopulate: 0, pendingXTriggers: saved.pendingXTriggers ?? [] } as AppState;
     }
     return initialState;
   });

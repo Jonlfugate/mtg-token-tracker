@@ -46,6 +46,7 @@ export type AppAction =
   | { type: 'ADJUST_TOKEN'; payload: { id: string; delta: number } }
   | { type: 'RESOLVE_POPULATE' }
   | { type: 'CANCEL_POPULATE' }
+  | { type: 'SHIFT_X_TRIGGER' }
   | { type: 'NEW_TURN' }
   | { type: 'RESET' }
   | { type: 'LOAD_STATE'; payload: AppState };
@@ -57,6 +58,7 @@ export const initialState: AppState = {
   standaloneTokens: [],
   currentTurn: 1,
   pendingPopulate: 0,
+  pendingXTriggers: [],
   importStatus: 'idle',
   fetchProgress: { done: 0, total: 0 },
 };
@@ -123,10 +125,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         const newTokens: StandaloneToken[] = results.map(calc => ({
           id: crypto.randomUUID(),
           tokenDef: calc.baseTokens,
-          tokenArt: calc.tokenArt,
+          tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
           finalCount: calc.finalCount,
           breakdown: calc.breakdown,
           sourceName: deckCard.scryfallData.name,
+          copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
           createdOnTurn: state.currentTurn,
         }));
         newStandaloneTokens = [...state.standaloneTokens, ...newTokens];
@@ -210,6 +213,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         .filter(c => c.category === 'support' || c.category === 'both');
 
       const allNewTokens: StandaloneToken[] = [];
+      const xTriggerQueue: number[] = [];
 
       // Trigger battlefield permanents
       for (const bc of state.battlefield) {
@@ -217,7 +221,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         if (!isTokenGenerator(card) || !card.triggerInfo || !triggerTypes.includes(card.triggerInfo.type)) continue;
 
         const activeCard = getActiveTokens(card, bc.conditionMet ?? false);
-        if (activeCard.tokens.some(t => t.count === -1)) continue;
+        if (activeCard.tokens.some(t => t.count === -1)) {
+          xTriggerQueue.push(bc.deckCardIndex);
+          continue;
+        }
 
         const results = calculateTokens(activeCard, supportCards);
         for (const calc of results) {
@@ -272,12 +279,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         return card.hasPopulate && card.triggerInfo && triggerTypes.includes(card.triggerInfo.type);
       }).length;
 
-      if (allNewTokens.length === 0 && populateCount === 0) return state;
+      if (allNewTokens.length === 0 && populateCount === 0 && xTriggerQueue.length === 0) return state;
 
       return {
         ...state,
         standaloneTokens: [...state.standaloneTokens, ...allNewTokens],
         pendingPopulate: state.pendingPopulate + populateCount,
+        pendingXTriggers: [...state.pendingXTriggers, ...xTriggerQueue],
       };
     }
 
@@ -334,6 +342,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         pendingPopulate: 0,
+      };
+
+    case 'SHIFT_X_TRIGGER':
+      return {
+        ...state,
+        pendingXTriggers: state.pendingXTriggers.slice(1),
       };
 
     case 'NEW_TURN':

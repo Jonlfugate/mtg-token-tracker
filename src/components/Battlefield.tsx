@@ -59,12 +59,27 @@ export function Battlefield() {
     }
   }, [deckCards, dispatch]);
 
+  // Process pendingXTriggers queue — show modal for the first queued card
+  const pendingXIndex = state.pendingXTriggers.length > 0 ? state.pendingXTriggers[0] : null;
+  const showXModal = triggerXModal ?? pendingXIndex;
+
   const handleTriggerXConfirm = useCallback((xValue: number) => {
     if (triggerXModal !== null) {
       dispatch({ type: 'TRIGGER_CARD', payload: { deckCardIndex: triggerXModal, xValue } });
       setTriggerXModal(null);
+    } else if (pendingXIndex !== null) {
+      dispatch({ type: 'TRIGGER_CARD', payload: { deckCardIndex: pendingXIndex, xValue } });
+      dispatch({ type: 'SHIFT_X_TRIGGER' });
     }
-  }, [triggerXModal, dispatch]);
+  }, [triggerXModal, pendingXIndex, dispatch]);
+
+  const handleXModalCancel = useCallback(() => {
+    if (triggerXModal !== null) {
+      setTriggerXModal(null);
+    } else if (pendingXIndex !== null) {
+      dispatch({ type: 'SHIFT_X_TRIGGER' });
+    }
+  }, [triggerXModal, pendingXIndex, dispatch]);
 
   const handlePopulateSelect = useCallback((token: StandaloneToken) => {
     dispatch({ type: 'ADJUST_TOKEN', payload: { id: token.id, delta: 1 } });
@@ -262,11 +277,11 @@ export function Battlefield() {
         </div>
       )}
 
-      {triggerXModal !== null && (
+      {showXModal !== null && (
         <XValueModal
-          cardName={deckCards[triggerXModal].scryfallData.name}
+          cardName={deckCards[showXModal].scryfallData.name}
           onConfirm={handleTriggerXConfirm}
-          onCancel={() => setTriggerXModal(null)}
+          onCancel={handleXModalCancel}
         />
       )}
     </div>

@@ -219,6 +219,13 @@ export function detectTokens(card: ScryfallCard): TokenDefinition[] {
     const snippet = match[1];
     const parsed = parseTokenSnippet(snippet);
     if (parsed) {
+      // Check if count is variable ("for each", "equal to", "that many")
+      const fullMatchEnd = match.index + match[0].length;
+      const textAfterToken = oracleText.substring(fullMatchEnd, fullMatchEnd + 50).toLowerCase();
+      if (/for each\b/.test(textAfterToken) || /equal to\b/.test(textAfterToken)) {
+        parsed.count = -1; // variable
+      }
+
       // If the card is modal, mark token creation as conditional
       // so the player can opt-in via checkbox for bulk triggers
       if (isModal) {

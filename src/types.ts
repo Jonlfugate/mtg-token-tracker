@@ -118,6 +118,7 @@ export interface AppState {
   standaloneTokens: StandaloneToken[];
   currentTurn: number;
   pendingPopulate: number;
+  pendingXTriggers: number[]; // queue of deckCardIndex values needing X input
   importStatus: 'idle' | 'parsing' | 'fetching' | 'classifying' | 'done' | 'error';
   fetchProgress: { done: number; total: number };
   error?: string;

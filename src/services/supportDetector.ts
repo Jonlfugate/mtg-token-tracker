@@ -9,13 +9,13 @@ interface SupportPattern {
 
 const SUPPORT_PATTERNS: SupportPattern[] = [
   // "creates twice that many of those tokens instead"
-  { regex: /twice\s+that\s+many/i, type: 'multiplier', factor: 2 },
+  { regex: /twice\s+that\s+many.*token/i, type: 'multiplier', factor: 2 },
   // "double the number of those tokens"
-  { regex: /double\s+the\s+number/i, type: 'multiplier', factor: 2 },
-  // "three times that many"
-  { regex: /three\s+times\s+that\s+many/i, type: 'multiplier', factor: 3 },
-  // "that many plus one" (Mondrak-style)
-  { regex: /that\s+many\s+plus\s+one/i, type: 'additional', factor: 1 },
+  { regex: /double\s+the\s+number.*token/i, type: 'multiplier', factor: 2 },
+  // "three times that many" (tokens)
+  { regex: /three\s+times\s+that\s+many.*token/i, type: 'multiplier', factor: 3 },
+  // "that many plus one" (Mondrak-style — near tokens)
+  { regex: /token.*that\s+many\s+plus\s+one/i, type: 'additional', factor: 1 },
   // "plus one additional"
   { regex: /plus\s+one\s+additional/i, type: 'additional', factor: 1 },
   // "create one additional copy" / "an additional token"
@@ -34,9 +34,6 @@ function getOracleText(card: ScryfallCard): string {
 
 export function detectSupport(card: ScryfallCard): SupportEffect | undefined {
   const oracleText = getOracleText(card);
-
-  // Must reference tokens in the text to be a token support card
-  if (!/token/i.test(oracleText)) return undefined;
 
   for (const pattern of SUPPORT_PATTERNS) {
     const match = oracleText.match(pattern.regex);
