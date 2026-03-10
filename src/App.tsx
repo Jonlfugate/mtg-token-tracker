@@ -1,4 +1,5 @@
 import { AppProvider } from './state/AppContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { DeckImport } from './components/DeckImport';
 import { DeckList } from './components/DeckList';
 import { Battlefield } from './components/Battlefield';
@@ -26,9 +27,11 @@ function AppContent() {
 
 function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }
 
