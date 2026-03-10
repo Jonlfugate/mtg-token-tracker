@@ -143,6 +143,7 @@ export function DeckList() {
                 max={remaining}
                 value={qty}
                 onChange={(e) => handleQuantityChange(index, parseInt(e.target.value, 10) || 1)}
+                onFocus={(e) => e.target.select()}
                 className="quantity-input"
               />
               at once
