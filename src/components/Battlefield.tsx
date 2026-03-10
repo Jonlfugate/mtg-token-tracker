@@ -21,15 +21,12 @@ export function Battlefield() {
     return grouped;
   }, [battlefield]);
 
-  // Check if we have any landfall or turn-phase generators on the battlefield
+  // Check if we have any landfall generators on the battlefield
   const hasLandfall = battlefield.some(bc => {
     const card = deckCards[bc.deckCardIndex];
     return (card.category === 'token-generator' || card.category === 'both')
       && card.triggerInfo?.type === 'landfall';
   });
-
-
-  if (state.importStatus !== 'done') return null;
 
   const handleLandPlayed = useCallback(() => {
     dispatch({ type: 'TRIGGER_ALL', payload: { triggerTypes: ['landfall'] } });
@@ -100,6 +97,8 @@ export function Battlefield() {
     }
     return Array.from(grouped.values());
   }, [standaloneTokens, state.currentTurn]);
+
+  if (state.importStatus !== 'done') return null;
 
   if (battlefield.length === 0 && standaloneTokens.length === 0) {
     return (
