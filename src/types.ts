@@ -32,6 +32,21 @@ export interface ScryfallCard {
     image_uris?: { small: string; normal: string; art_crop: string; png: string };
   }>;
   all_parts?: ScryfallRelatedCard[];
+  colors?: string[];
+  keywords?: string[];
+  power?: string;
+  toughness?: string;
+}
+
+export interface ScryfallTokenData {
+  name: string;
+  power?: string;
+  toughness?: string;
+  colors: string[];
+  type_line: string;
+  keywords: string[];
+  oracle_text?: string;
+  imageUrl?: string;
 }
 
 export interface TokenArt {
@@ -53,6 +68,8 @@ export interface TokenDefinition {
   rawText: string;
   condition?: string; // e.g., "6+ lands" — only created when condition is met
   isConditional?: boolean; // true if this is the conditional version
+  isReplacement?: boolean; // true if this replaces the default token ("instead")
+  countMode?: 'self-copies'; // auto-count from battlefield state (e.g., Hare Apparent)
 }
 
 export interface SupportEffect {
@@ -67,6 +84,7 @@ export type CardCategory = 'token-generator' | 'support' | 'both' | 'other';
 export interface TriggerInfo {
   type: string;
   label: string; // e.g., "Upkeep", "Tap", "Landfall", "ETB"
+  alsoEtb?: boolean; // true if the ability also triggers on ETB (e.g., "enters or attacks")
 }
 
 export interface DeckCard {
@@ -84,7 +102,7 @@ export interface BattlefieldCard {
   instanceId: string;
   deckCardIndex: number;
   xValue?: number; // for cards that create X tokens
-  conditionMet?: boolean; // for cards with conditional token creation
+  conditionsMet?: Record<string, boolean>; // per-token condition toggles, keyed by token name
 }
 
 // Tokens that persist independently (from instants/sorceries)
@@ -111,6 +129,12 @@ export interface TokenCalculationResult {
   breakdown: string;
 }
 
+export interface HistoryEntry {
+  label: string;
+  turn: number;
+  timestamp: number;
+}
+
 export interface AppState {
   rawDecklist: string;
   deckCards: DeckCard[];
@@ -122,4 +146,6 @@ export interface AppState {
   importStatus: 'idle' | 'parsing' | 'fetching' | 'classifying' | 'done' | 'error';
   fetchProgress: { done: number; total: number };
   error?: string;
+  history: HistoryEntry[];
+  undoStack: AppState[];
 }

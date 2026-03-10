@@ -1,4 +1,4 @@
-import type { AppState, BattlefieldCard, DeckCard, StandaloneToken } from '../types';
+import type { AppState, BattlefieldCard, DeckCard, HistoryEntry, StandaloneToken } from '../types';
 import { calculateTokens } from '../services/tokenCalculator';
 
 function isInstantOrSorcery(card: DeckCard): boolean {
@@ -14,15 +14,27 @@ function hasCondition(card: DeckCard): boolean {
   return card.tokens.some(t => t.isConditional);
 }
 
-// Filter tokens based on whether the condition is met:
-// - If conditionMet: use conditional tokens (and skip the default ones they replace)
-// - If not: use only non-conditional tokens
-function getActiveTokens(card: DeckCard, conditionMet: boolean): DeckCard {
+// Filter tokens based on per-token conditions:
+// - For tokens with isConditional: only include if that token's condition is met
+// - For non-conditional tokens: exclude if a replacement ("instead") token is active
+function getActiveTokens(card: DeckCard, conditionsMet: Record<string, boolean>): DeckCard {
   if (!hasCondition(card)) return card;
 
-  const filteredTokens = conditionMet
-    ? card.tokens.filter(t => t.isConditional)
-    : card.tokens.filter(t => !t.isConditional);
+  // Check if any "instead" replacement is active
+  const hasActiveReplacement = card.tokens.some(t => t.isReplacement && conditionsMet[t.name]);
+
+  const filteredTokens = card.tokens.filter(t => {
+    if (t.isConditional) {
+      // Include conditional tokens only if their specific condition is toggled on
+      return conditionsMet[t.name] ?? false;
+    }
+    // Non-conditional (default) tokens: exclude if a replacement is active
+    // (e.g., Court of Grace's Spirit is replaced by Angel when monarch)
+    if (hasActiveReplacement) {
+      return false;
+    }
+    return true;
+  });
 
   return { ...card, tokens: filteredTokens };
 }
@@ -31,24 +43,41 @@ function isCopyToken(tokenDef: { name: string }): boolean {
   return tokenDef.name.toLowerCase().startsWith('copy of ');
 }
 
+const MAX_UNDO = 50;
+
+function pushUndo(state: AppState): AppState[] {
+  // Save state without undoStack to avoid nested stacks
+  const snapshot = { ...state, undoStack: [] };
+  const stack = [...state.undoStack, snapshot];
+  if (stack.length > MAX_UNDO) stack.shift();
+  return stack;
+}
+
+function addHistory(state: AppState, label: string): HistoryEntry[] {
+  return [...state.history, { label, turn: state.currentTurn, timestamp: Date.now() }];
+}
+
 export type AppAction =
   | { type: 'SET_RAW_DECKLIST'; payload: string }
   | { type: 'IMPORT_START'; payload: { total: number } }
   | { type: 'FETCH_PROGRESS'; payload: { done: number; total: number } }
   | { type: 'IMPORT_COMPLETE'; payload: DeckCard[] }
   | { type: 'IMPORT_ERROR'; payload: string }
-  | { type: 'PLAY_CARD'; payload: { deckCardIndex: number; xValue?: number } }
+  | { type: 'PLAY_CARD'; payload: { deckCardIndex: number; xValue?: number; quantity?: number } }
   | { type: 'REMOVE_CARD'; payload: { instanceId: string } }
   | { type: 'TRIGGER_CARD'; payload: { deckCardIndex: number; xValue?: number } }
   | { type: 'TRIGGER_ALL'; payload: { triggerTypes: string[] } }
-  | { type: 'TOGGLE_CONDITION'; payload: { instanceId: string } }
+  | { type: 'TOGGLE_CONDITION'; payload: { instanceId: string; tokenName: string } }
   | { type: 'REMOVE_STANDALONE_TOKEN'; payload: { id: string } }
   | { type: 'ADJUST_TOKEN'; payload: { id: string; delta: number } }
   | { type: 'RESOLVE_POPULATE' }
   | { type: 'CANCEL_POPULATE' }
   | { type: 'SHIFT_X_TRIGGER' }
   | { type: 'NEW_TURN' }
+  | { type: 'CLEAR_ALL_TOKENS' }
+  | { type: 'CLEAR_TURN_TOKENS' }
   | { type: 'RESET' }
+  | { type: 'UNDO' }
   | { type: 'LOAD_STATE'; payload: AppState };
 
 export const initialState: AppState = {
@@ -61,6 +90,8 @@ export const initialState: AppState = {
   pendingXTriggers: [],
   importStatus: 'idle',
   fetchProgress: { done: 0, total: 0 },
+  history: [],
+  undoStack: [],
 };
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -77,6 +108,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         battlefield: [],
         standaloneTokens: [],
         error: undefined,
+        history: [],
+        undoStack: [],
       };
 
     case 'FETCH_PROGRESS':
@@ -101,17 +134,24 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case 'PLAY_CARD': {
-      const { deckCardIndex, xValue } = action.payload;
+      const { deckCardIndex, xValue, quantity = 1 } = action.payload;
       const deckCard = state.deckCards[deckCardIndex];
       if (!deckCard) return state;
+
+      const undoStack = pushUndo(state);
+      const cardName = deckCard.scryfallData.name;
+      const histLabel = quantity > 1 ? `Played ${quantity}x ${cardName}` : `Played ${cardName}`;
 
       // Determine if tokens should be created immediately on play:
       // - Instants/sorceries always resolve immediately
       // - ETB permanents trigger on entering the battlefield
       // - All other permanents wait for their trigger (landfall, upkeep, tap, etc.)
-      const shouldCreateTokensNow = isTokenGenerator(deckCard) && (
+      // - Modal cards (all tokens conditional) skip auto-create so the player can choose
+      const allTokensConditional = deckCard.tokens.length > 0 && deckCard.tokens.every(t => t.isConditional);
+      const shouldCreateTokensNow = isTokenGenerator(deckCard) && !allTokensConditional && (
         isInstantOrSorcery(deckCard) ||
         deckCard.triggerInfo?.type === 'etb' ||
+        deckCard.triggerInfo?.alsoEtb ||
         !deckCard.triggerInfo // no detected trigger = one-shot effect
       );
 
@@ -121,24 +161,56 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           .map(bc => state.deckCards[bc.deckCardIndex])
           .filter(c => c.category === 'support' || c.category === 'both');
 
-        const results = calculateTokens(deckCard, supportCards, xValue ?? 1);
-        const newTokens: StandaloneToken[] = results.map(calc => ({
-          id: crypto.randomUUID(),
-          tokenDef: calc.baseTokens,
-          tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
-          finalCount: calc.finalCount,
-          breakdown: calc.breakdown,
-          sourceName: deckCard.scryfallData.name,
-          copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
-          createdOnTurn: state.currentTurn,
-        }));
-        newStandaloneTokens = [...state.standaloneTokens, ...newTokens];
+        // Handle self-copies countMode: auto-calculate from battlefield state
+        // For simultaneous entry of N copies, each sees (alreadyInPlay + N - 1) others
+        const hasSelfCopies = deckCard.tokens.some(t => t.countMode === 'self-copies');
+        if (hasSelfCopies) {
+          const alreadyInPlay = state.battlefield.filter(b => b.deckCardIndex === deckCardIndex).length;
+          // Each copy entering sees: existing copies + other copies entering simultaneously
+          const eachSees = alreadyInPlay + quantity - 1;
+          // Create a modified card with the calculated count
+          const modifiedCard = {
+            ...deckCard,
+            tokens: deckCard.tokens.map(t =>
+              t.countMode === 'self-copies' ? { ...t, count: eachSees } : t
+            ),
+          };
+          // Each entering copy triggers separately
+          for (let i = 0; i < quantity; i++) {
+            const results = calculateTokens(modifiedCard, supportCards, xValue ?? 1);
+            const newTokens: StandaloneToken[] = results.map(calc => ({
+              id: crypto.randomUUID(),
+              tokenDef: calc.baseTokens,
+              tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
+              finalCount: calc.finalCount,
+              breakdown: calc.breakdown,
+              sourceName: deckCard.scryfallData.name,
+              copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
+              createdOnTurn: state.currentTurn,
+            }));
+            newStandaloneTokens = [...newStandaloneTokens, ...newTokens];
+          }
+        } else {
+          const results = calculateTokens(deckCard, supportCards, xValue ?? 1);
+          const newTokens: StandaloneToken[] = results.map(calc => ({
+            id: crypto.randomUUID(),
+            tokenDef: calc.baseTokens,
+            tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
+            finalCount: calc.finalCount,
+            breakdown: calc.breakdown,
+            sourceName: deckCard.scryfallData.name,
+            copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
+            createdOnTurn: state.currentTurn,
+          }));
+          newStandaloneTokens = [...state.standaloneTokens, ...newTokens];
+        }
       }
 
       // Check if this card triggers populate on play (ETB or instant/sorcery)
       const shouldPopulateNow = deckCard.hasPopulate && (
         isInstantOrSorcery(deckCard) ||
         deckCard.triggerInfo?.type === 'etb' ||
+        deckCard.triggerInfo?.alsoEtb ||
         !deckCard.triggerInfo
       );
       const populateAdd = shouldPopulateNow ? 1 : 0;
@@ -149,26 +221,33 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           ...state,
           standaloneTokens: newStandaloneTokens,
           pendingPopulate: state.pendingPopulate + populateAdd,
+          undoStack,
+          history: addHistory(state, histLabel),
         };
       }
 
       // Permanents go to the battlefield
       const inPlayCount = state.battlefield.filter(b => b.deckCardIndex === deckCardIndex).length;
-      if (inPlayCount >= deckCard.decklistEntry.quantity) {
-        return { ...state, standaloneTokens: newStandaloneTokens, pendingPopulate: state.pendingPopulate + populateAdd };
+      if (inPlayCount + quantity > deckCard.decklistEntry.quantity) {
+        return { ...state, standaloneTokens: newStandaloneTokens, pendingPopulate: state.pendingPopulate + populateAdd, undoStack, history: addHistory(state, histLabel) };
       }
 
-      const newCard: BattlefieldCard = {
-        instanceId: crypto.randomUUID(),
-        deckCardIndex,
-        xValue,
-      };
+      const newCards: BattlefieldCard[] = [];
+      for (let i = 0; i < quantity; i++) {
+        newCards.push({
+          instanceId: crypto.randomUUID(),
+          deckCardIndex,
+          xValue,
+        });
+      }
 
       return {
         ...state,
-        battlefield: [...state.battlefield, newCard],
+        battlefield: [...state.battlefield, ...newCards],
         standaloneTokens: newStandaloneTokens,
         pendingPopulate: state.pendingPopulate + populateAdd,
+        undoStack,
+        history: addHistory(state, histLabel),
       };
     }
 
@@ -177,9 +256,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const deckCard = state.deckCards[deckCardIndex];
       if (!deckCard || !isTokenGenerator(deckCard)) return state;
 
+      const undoStack = pushUndo(state);
+
       // Find the battlefield instance to check its conditionMet state
       const bc = state.battlefield.find(b => b.deckCardIndex === deckCardIndex);
-      const conditionMet = bc?.conditionMet ?? false;
+      const conditionMet = bc?.conditionsMet ?? {};
       const activeCard = getActiveTokens(deckCard, conditionMet);
 
       const supportCards = state.battlefield
@@ -202,11 +283,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         standaloneTokens: [...state.standaloneTokens, ...newTokens],
         pendingPopulate: state.pendingPopulate + (deckCard.hasPopulate ? 1 : 0),
+        undoStack,
+        history: addHistory(state, `Triggered ${deckCard.scryfallData.name}`),
       };
     }
 
     case 'TRIGGER_ALL': {
       const { triggerTypes } = action.payload;
+
+      const undoStack = pushUndo(state);
 
       const supportCards = state.battlefield
         .map(bc => state.deckCards[bc.deckCardIndex])
@@ -220,7 +305,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         const card = state.deckCards[bc.deckCardIndex];
         if (!isTokenGenerator(card) || !card.triggerInfo || !triggerTypes.includes(card.triggerInfo.type)) continue;
 
-        const activeCard = getActiveTokens(card, bc.conditionMet ?? false);
+        const activeCard = getActiveTokens(card, bc.conditionsMet ?? {});
         if (activeCard.tokens.some(t => t.count === -1)) {
           xTriggerQueue.push(bc.deckCardIndex);
           continue;
@@ -242,20 +327,16 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       }
 
       // Also trigger copy tokens that are copies of cards with matching trigger types
-      // (e.g., Copy of Scute Swarm tokens also trigger on landfall)
       for (const token of state.standaloneTokens) {
         if (token.copyOfDeckIndex === undefined) continue;
         const originalCard = state.deckCards[token.copyOfDeckIndex];
         if (!originalCard || !originalCard.triggerInfo || !triggerTypes.includes(originalCard.triggerInfo.type)) continue;
 
-        // Each copy token triggers once per event, creating tokens as the original would
-        // Use the original card's condition state from the battlefield
         const bc = state.battlefield.find(b => b.deckCardIndex === token.copyOfDeckIndex);
-        const conditionMet = bc?.conditionMet ?? false;
+        const conditionMet = bc?.conditionsMet ?? {};
         const activeCard = getActiveTokens(originalCard, conditionMet);
         if (activeCard.tokens.some(t => t.count === -1)) continue;
 
-        // Each copy triggers for each token in the group
         for (let i = 0; i < token.finalCount; i++) {
           const results = calculateTokens(activeCard, supportCards);
           for (const calc of results) {
@@ -281,37 +362,52 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
       if (allNewTokens.length === 0 && populateCount === 0 && xTriggerQueue.length === 0) return state;
 
+      const label = triggerTypes.includes('landfall') ? 'Land played' : `New turn (Turn ${state.currentTurn})`;
+
       return {
         ...state,
         standaloneTokens: [...state.standaloneTokens, ...allNewTokens],
         pendingPopulate: state.pendingPopulate + populateCount,
         pendingXTriggers: [...state.pendingXTriggers, ...xTriggerQueue],
+        undoStack,
+        history: addHistory(state, label),
       };
     }
 
     case 'TOGGLE_CONDITION': {
-      const { instanceId } = action.payload;
+      const { instanceId, tokenName } = action.payload;
       return {
         ...state,
-        battlefield: state.battlefield.map(bc =>
-          bc.instanceId === instanceId
-            ? { ...bc, conditionMet: !bc.conditionMet }
-            : bc
-        ),
+        battlefield: state.battlefield.map(bc => {
+          if (bc.instanceId !== instanceId) return bc;
+          const prev = bc.conditionsMet ?? {};
+          return { ...bc, conditionsMet: { ...prev, [tokenName]: !prev[tokenName] } };
+        }),
       };
     }
 
-    case 'REMOVE_CARD':
+    case 'REMOVE_CARD': {
+      const undoStack = pushUndo(state);
+      const bc = state.battlefield.find(b => b.instanceId === action.payload.instanceId);
+      const cardName = bc ? state.deckCards[bc.deckCardIndex]?.scryfallData.name : 'card';
       return {
         ...state,
         battlefield: state.battlefield.filter(b => b.instanceId !== action.payload.instanceId),
+        undoStack,
+        history: addHistory(state, `Removed ${cardName}`),
       };
+    }
 
-    case 'REMOVE_STANDALONE_TOKEN':
+    case 'REMOVE_STANDALONE_TOKEN': {
+      const undoStack = pushUndo(state);
+      const token = state.standaloneTokens.find(t => t.id === action.payload.id);
       return {
         ...state,
         standaloneTokens: state.standaloneTokens.filter(t => t.id !== action.payload.id),
+        undoStack,
+        history: addHistory(state, `Removed ${token?.tokenDef.name ?? 'token'} tokens`),
       };
+    }
 
     case 'ADJUST_TOKEN': {
       const { id, delta } = action.payload;
@@ -350,11 +446,45 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         pendingXTriggers: state.pendingXTriggers.slice(1),
       };
 
+    case 'CLEAR_ALL_TOKENS': {
+      if (state.standaloneTokens.length === 0) return state;
+      const undoStack = pushUndo(state);
+      return {
+        ...state,
+        standaloneTokens: [],
+        undoStack,
+        history: addHistory(state, 'Cleared all tokens'),
+      };
+    }
+
+    case 'CLEAR_TURN_TOKENS': {
+      const turnTokens = state.standaloneTokens.filter(t => t.createdOnTurn === state.currentTurn);
+      if (turnTokens.length === 0) return state;
+      const undoStack = pushUndo(state);
+      return {
+        ...state,
+        standaloneTokens: state.standaloneTokens.filter(t => t.createdOnTurn !== state.currentTurn),
+        undoStack,
+        history: addHistory(state, `Cleared turn ${state.currentTurn} tokens`),
+      };
+    }
+
     case 'NEW_TURN':
       return {
         ...state,
         currentTurn: state.currentTurn + 1,
+        history: addHistory(state, `Turn ${state.currentTurn + 1} started`),
       };
+
+    case 'UNDO': {
+      if (state.undoStack.length === 0) return state;
+      const prevState = state.undoStack[state.undoStack.length - 1];
+      return {
+        ...prevState,
+        undoStack: state.undoStack.slice(0, -1),
+        history: [...state.history, { label: 'Undo', turn: state.currentTurn, timestamp: Date.now() }],
+      };
+    }
 
     case 'RESET':
       return initialState;

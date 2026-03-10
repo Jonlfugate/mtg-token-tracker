@@ -1,4 +1,5 @@
 import { memo, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { DeckCard } from '../types';
 
 interface CardRowProps {
@@ -11,10 +12,9 @@ interface CardRowProps {
   extraLabel?: string;
   onTrigger?: () => void;
   triggerLabel?: string;
-  showCondition?: boolean;
-  conditionMet?: boolean;
-  conditionLabel?: string;
-  onToggleCondition?: () => void;
+  conditions?: Array<{ tokenName: string; label: string; checked: boolean }>;
+  onToggleCondition?: (tokenName: string) => void;
+  children?: ReactNode;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -31,6 +31,20 @@ const CATEGORY_COLORS: Record<string, string> = {
   'other': 'transparent',
 };
 
+const TRIGGER_COLORS: Record<string, string> = {
+  'landfall': '#16a34a',
+  'upkeep': '#2563eb',
+  'combat': '#dc2626',
+  'etb': '#d97706',
+  'tap': '#6366f1',
+  'other': '#6b7280',
+};
+
+function getArtCropUri(card: DeckCard): string | undefined {
+  const data = card.scryfallData;
+  return data.image_uris?.art_crop || data.card_faces?.[0]?.image_uris?.art_crop;
+}
+
 function getImageUri(card: DeckCard): string | undefined {
   const data = card.scryfallData;
   return data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
@@ -40,15 +54,24 @@ export const CardRow = memo(function CardRow({
   card, inPlayCount,
   onPlay, onRemove, showPlayButton, showRemoveButton, extraLabel,
   onTrigger, triggerLabel,
-  showCondition, conditionMet, conditionLabel, onToggleCondition,
+  conditions, onToggleCondition, children,
 }: CardRowProps) {
   const [showImage, setShowImage] = useState(false);
   const imageUri = getImageUri(card);
+  const artCropUri = getArtCropUri(card);
   const maxQty = card.decklistEntry.quantity;
   const canPlay = inPlayCount < maxQty;
 
   return (
     <div className={`card-row category-${card.category}`}>
+      {artCropUri && (
+        <img
+          src={artCropUri}
+          alt=""
+          className="card-thumbnail"
+          loading="lazy"
+        />
+      )}
       <div className="card-info">
         <span
           className="card-name"
@@ -63,6 +86,15 @@ export const CardRow = memo(function CardRow({
             style={{ backgroundColor: CATEGORY_COLORS[card.category] }}
           >
             {CATEGORY_LABELS[card.category]}
+          </span>
+        )}
+        {card.triggerInfo && (
+          <span
+            className="trigger-badge"
+            style={{ backgroundColor: TRIGGER_COLORS[card.triggerInfo.type] ?? TRIGGER_COLORS['other'] }}
+          >
+            {card.triggerInfo.label}
+            {card.triggerInfo.alsoEtb && ' + ETB'}
           </span>
         )}
         <span className="card-qty">
@@ -91,16 +123,18 @@ export const CardRow = memo(function CardRow({
         )}
       </div>
 
-      {showCondition && (
-        <label className="condition-toggle" title={conditionLabel || 'Condition'}>
+      {conditions && conditions.length > 0 && conditions.map(cond => (
+        <label key={cond.tokenName} className="condition-toggle" title={cond.label}>
           <input
             type="checkbox"
-            checked={conditionMet ?? false}
-            onChange={onToggleCondition}
+            checked={cond.checked}
+            onChange={() => onToggleCondition?.(cond.tokenName)}
           />
-          <span className="condition-label">{conditionLabel || 'Condition met'}</span>
+          <span className="condition-label">{cond.label}</span>
         </label>
-      )}
+      ))}
+
+      {children}
 
       <div className="card-actions">
         {onTrigger && (

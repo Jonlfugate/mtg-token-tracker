@@ -30,8 +30,8 @@ export function useDeckImport() {
       const deckCards = entries
         .filter(entry => cardDataMap.has(entry.name))
         .map(entry => {
-          const { card: scryfallData, tokenArt } = cardDataMap.get(entry.name)!;
-          const tokens = detectTokens(scryfallData);
+          const { card: scryfallData, tokenArt, tokenData } = cardDataMap.get(entry.name)!;
+          const tokens = detectTokens(scryfallData, tokenData);
           const supportEffect = detectSupport(scryfallData);
           const oracleText = scryfallData.oracle_text || scryfallData.card_faces?.map(f => f.oracle_text || '').join('\n') || '';
           const hasPopulate = /\bpopulate\b/i.test(oracleText);

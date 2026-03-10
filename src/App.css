@@ -42,6 +42,23 @@
   font-size: 0.9rem;
 }
 
+.change-deck-btn {
+  margin-top: 0.5rem;
+  padding: 0.3rem 1rem;
+  background: transparent;
+  border: 1px solid #555;
+  color: #aaa;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.15s;
+}
+
+.change-deck-btn:hover {
+  border-color: #8b5cf6;
+  color: #ccc;
+}
+
 .app-footer {
   margin-top: 2rem;
   padding-top: 1rem;
@@ -174,6 +191,26 @@ button.danger:hover:not(:disabled) {
   background: #047857;
 }
 
+.play-quantity {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #ccc;
+}
+
+.quantity-input {
+  width: 3rem;
+  padding: 0.15rem 0.25rem;
+  text-align: center;
+  background: #2a2a2a;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.85rem;
+  margin: 0 0.25rem;
+}
+
 .remove-btn {
   background: #dc2626;
   color: white;
@@ -265,6 +302,28 @@ button.danger:hover:not(:disabled) {
   padding-bottom: 0.25rem;
 }
 
+.deck-section-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.deck-section-header:hover {
+  color: #ccc;
+}
+
+.collapse-arrow {
+  display: inline-block;
+  transition: transform 0.2s;
+  font-size: 0.8rem;
+}
+
+.collapse-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
 /* Card Row */
 .card-row {
   display: flex;
@@ -315,6 +374,14 @@ button.danger:hover:not(:disabled) {
   text-overflow: ellipsis;
 }
 
+.card-thumbnail {
+  width: 36px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
 .category-badge {
   font-size: 0.65rem;
   padding: 0.1rem 0.4rem;
@@ -322,6 +389,15 @@ button.danger:hover:not(:disabled) {
   color: white;
   font-weight: 700;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.trigger-badge {
+  font-size: 0.6rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  color: white;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -457,6 +533,44 @@ button.danger:hover:not(:disabled) {
   background: #b45309;
 }
 
+.undo-btn {
+  background: #4b5563;
+  color: white;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.undo-btn:hover:not(:disabled) {
+  background: #374151;
+}
+
+.history-btn {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.turn-badge {
+  font-size: 0.75rem;
+  background: #2563eb;
+  color: white;
+  padding: 0.1rem 0.5rem;
+  border-radius: 10px;
+  margin-left: 0.5rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.creature-count {
+  font-size: 0.7rem;
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  padding: 0.1rem 0.5rem;
+  border-radius: 10px;
+  margin-left: 0.4rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 .battlefield-panel h3 {
   margin: 0.75rem 0 0.5rem;
   font-size: 0.95rem;
@@ -473,6 +587,70 @@ button.danger:hover:not(:disabled) {
 
 .battlefield-cards {
   margin-bottom: 0.5rem;
+}
+
+/* Trigger Groups */
+.trigger-group {
+  margin-bottom: 0.5rem;
+}
+
+.trigger-group-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin: 0.4rem 0 0.2rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.trigger-group-etb { background: rgba(217, 119, 6, 0.2); color: #fbbf24; }
+.trigger-group-landfall { background: rgba(22, 163, 74, 0.2); color: #4ade80; }
+.trigger-group-upkeep { background: rgba(37, 99, 235, 0.2); color: #60a5fa; }
+.trigger-group-combat { background: rgba(220, 38, 38, 0.2); color: #f87171; }
+.trigger-group-tap { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+.trigger-group-other { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+.trigger-group-support { background: rgba(255, 152, 0, 0.2); color: #fbbf24; }
+.trigger-group-none { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
+
+/* History Log */
+.history-log {
+  background: #0f0f1a;
+  border: 1px solid #2a2a3e;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.75rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.history-log h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.history-log ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-entry {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+  font-size: 0.78rem;
+  border-bottom: 1px solid #1a1a2e;
+}
+
+.history-turn {
+  color: #60a5fa;
+  font-weight: 700;
+  min-width: 2rem;
+}
+
+.history-label {
+  color: #ccc;
 }
 
 .variable-x {
@@ -501,6 +679,29 @@ button.danger:hover:not(:disabled) {
   margin-top: 0.5rem;
 }
 
+.token-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.token-header h3 {
+  margin: 0;
+}
+
+.token-bulk-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.bulk-clear-btn {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  border-radius: 4px;
+}
+
 .token-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -511,7 +712,7 @@ button.danger:hover:not(:disabled) {
 .token-tile {
   position: relative;
   background: #12122a;
-  border: 1px solid #2a2a3e;
+  border: 2px solid #2a2a3e;
   border-radius: 10px;
   overflow: hidden;
   transition: transform 0.15s, box-shadow 0.15s;
@@ -587,19 +788,42 @@ button.danger:hover:not(:disabled) {
   color: #e0e0e0;
 }
 
+/* P/T Badge on token art */
+.token-pt-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid #f59e0b;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fbbf24;
+}
+
 .token-art-placeholder {
   width: 100%;
   aspect-ratio: 4 / 3;
   background: linear-gradient(135deg, #1e1e3e, #2a2a4e);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.25rem;
   border-bottom: 1px solid #2a2a3e;
+  position: relative;
 }
 
 .token-art-placeholder .token-count-number {
   font-size: 2rem;
   color: #8b5cf6;
+}
+
+.token-pt-badge-placeholder {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #fbbf24;
 }
 
 .token-tile-info {
@@ -612,6 +836,12 @@ button.danger:hover:not(:disabled) {
 .token-tile-name {
   font-weight: 700;
   font-size: 0.9rem;
+}
+
+.token-keywords {
+  font-size: 0.7rem;
+  color: #c084fc;
+  font-style: italic;
 }
 
 .token-tile-source {
@@ -763,6 +993,17 @@ button.danger:hover:not(:disabled) {
   pointer-events: none;
 }
 
+/* Token count change animation */
+@keyframes tokenPulse {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.05); box-shadow: 0 0 16px rgba(139, 92, 246, 0.5); }
+  100% { transform: scale(1); }
+}
+
+.token-tile.token-animate {
+  animation: tokenPulse 0.5s ease-out;
+}
+
 .token-tile.populate-selectable {
   cursor: pointer;
   border-color: #4ade80;
@@ -784,19 +1025,39 @@ button.danger:hover:not(:disabled) {
   .card-image-popup {
     display: none;
   }
+
+  .battlefield-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .battlefield-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .token-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 @media (max-width: 600px) {
   .app {
-    padding: 0.75rem 1rem;
+    padding: 0.75rem 0.75rem;
   }
 
   .app-header h1 {
     font-size: 1.5rem;
   }
 
+  .app-header p {
+    font-size: 0.8rem;
+  }
+
   .token-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 0.5rem;
   }
 
@@ -807,13 +1068,118 @@ button.danger:hover:not(:disabled) {
 
   .battlefield-actions {
     flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .battlefield-actions button {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .card-row {
+    padding: 0.5rem;
+    gap: 0.3rem 0.4rem;
   }
 
   .card-info {
     flex-wrap: wrap;
   }
 
+  .card-thumbnail {
+    width: 30px;
+    height: 22px;
+  }
+
+  .card-name {
+    font-size: 0.85rem;
+  }
+
   .category-badge {
-    font-size: 0.6rem;
+    font-size: 0.55rem;
+    padding: 0.05rem 0.3rem;
+  }
+
+  .trigger-badge {
+    font-size: 0.55rem;
+    padding: 0.05rem 0.3rem;
+  }
+
+  .card-details {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .card-actions {
+    width: 100%;
+    display: flex;
+    gap: 0.35rem;
+  }
+
+  .card-actions button {
+    flex: 1;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.8rem;
+  }
+
+  .play-btn, .remove-btn, .trigger-btn {
+    min-height: 36px;
+  }
+
+  .condition-toggle {
+    padding: 0.2rem 0;
+  }
+
+  .condition-label {
+    max-width: 150px;
+  }
+
+  .deck-import textarea {
+    rows: 6;
+    font-size: 0.8rem;
+  }
+
+  .deck-import-actions {
+    flex-wrap: wrap;
+  }
+
+  .deck-import-actions button {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .token-tile-info {
+    padding: 0.4rem 0.5rem;
+  }
+
+  .token-tile-name {
+    font-size: 0.8rem;
+  }
+
+  .token-adjust-btn {
+    width: 36px;
+    height: 32px;
+    font-size: 1.2rem;
+  }
+
+  .populate-banner {
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+  }
+
+  .history-log {
+    max-height: 150px;
+  }
+
+  .creature-count, .turn-badge {
+    display: block;
+    margin: 0.2rem auto 0;
+  }
+
+  .bulk-clear-btn {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.75rem;
+    min-height: 32px;
   }
 }

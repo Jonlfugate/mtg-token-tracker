@@ -1,25 +1,81 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../state/AppContext';
 import { CardRow } from './CardRow';
 import { XValueModal } from './XValueModal';
-import type { StandaloneToken } from '../types';
+import type { StandaloneToken, TokenDefinition } from '../types';
+
+const COLOR_BORDER_MAP: Record<string, string> = {
+  white: '#f5f0d0',
+  blue: '#0e67ab',
+  black: '#6b6b6b',
+  red: '#d32029',
+  green: '#00733e',
+};
+
+function getTokenBorderColor(tokenDef: TokenDefinition): string {
+  const colors = tokenDef.colors.filter(c => c !== 'colorless');
+  if (colors.length === 0) return '#6b7280'; // grey for colorless
+  if (colors.length > 1) return '#c9a92c'; // gold for multicolor
+  return COLOR_BORDER_MAP[colors[0]] ?? '#6b7280';
+}
+
+const TRIGGER_GROUP_ORDER = ['etb', 'landfall', 'upkeep', 'combat', 'tap', 'other'];
+const TRIGGER_GROUP_LABELS: Record<string, string> = {
+  etb: 'ETB',
+  landfall: 'Landfall',
+  upkeep: 'Upkeep',
+  combat: 'Combat',
+  tap: 'Tap',
+  other: 'Other Triggers',
+  support: 'Support',
+  none: 'No Trigger',
+};
 
 export function Battlefield() {
   const { state, dispatch } = useAppContext();
   const { deckCards, battlefield, standaloneTokens } = state;
   const [triggerXModal, setTriggerXModal] = useState<number | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const prevTokenCountsRef = useRef<Map<string, number>>(new Map());
+  const [animatingIds, setAnimatingIds] = useState<Set<string>>(new Set());
   const populateMode = state.pendingPopulate > 0 && standaloneTokens.length > 0;
 
-  const activeCards = useMemo(() => {
-    const grouped = new Map<number, string[]>();
+  // Group battlefield cards by trigger type
+  const triggerGroups = useMemo(() => {
+    const groups = new Map<string, Array<{ deckIdx: number; instanceIds: string[] }>>();
+
+    const cardMap = new Map<number, string[]>();
     for (const bc of battlefield) {
-      if (!grouped.has(bc.deckCardIndex)) {
-        grouped.set(bc.deckCardIndex, []);
+      if (!cardMap.has(bc.deckCardIndex)) {
+        cardMap.set(bc.deckCardIndex, []);
       }
-      grouped.get(bc.deckCardIndex)!.push(bc.instanceId);
+      cardMap.get(bc.deckCardIndex)!.push(bc.instanceId);
     }
-    return grouped;
-  }, [battlefield]);
+
+    for (const [deckIdx, instanceIds] of cardMap) {
+      const card = deckCards[deckIdx];
+      let groupKey: string;
+      if (card.category === 'support') {
+        groupKey = 'support';
+      } else if (card.triggerInfo) {
+        groupKey = card.triggerInfo.type;
+      } else {
+        groupKey = 'none';
+      }
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey)!.push({ deckIdx, instanceIds });
+    }
+
+    // Sort groups in defined order
+    const ordered: Array<{ key: string; label: string; cards: Array<{ deckIdx: number; instanceIds: string[] }> }> = [];
+    for (const key of [...TRIGGER_GROUP_ORDER, 'support', 'none']) {
+      const cards = groups.get(key);
+      if (cards && cards.length > 0) {
+        ordered.push({ key, label: TRIGGER_GROUP_LABELS[key] ?? key, cards });
+      }
+    }
+    return ordered;
+  }, [battlefield, deckCards]);
 
   // Check if we have any landfall generators on the battlefield
   const hasLandfall = battlefield.some(bc => {
@@ -90,6 +146,33 @@ export function Battlefield() {
     dispatch({ type: 'CANCEL_POPULATE' });
   }, [dispatch]);
 
+  const handleUndo = useCallback(() => {
+    dispatch({ type: 'UNDO' });
+  }, [dispatch]);
+
+  const handleClearAllTokens = useCallback(() => {
+    dispatch({ type: 'CLEAR_ALL_TOKENS' });
+  }, [dispatch]);
+
+  const handleClearTurnTokens = useCallback(() => {
+    dispatch({ type: 'CLEAR_TURN_TOKENS' });
+  }, [dispatch]);
+
+  // Count total creatures on battlefield (cards + creature tokens)
+  const creatureCount = useMemo(() => {
+    let count = 0;
+    // Count creature cards on battlefield
+    for (const bc of battlefield) {
+      const card = deckCards[bc.deckCardIndex];
+      if (card.scryfallData.type_line.toLowerCase().includes('creature')) count++;
+    }
+    // Count creature tokens
+    for (const token of standaloneTokens) {
+      if (token.tokenDef.types.includes('creature')) count += token.finalCount;
+    }
+    return count;
+  }, [battlefield, deckCards, standaloneTokens]);
+
   const totalTokens = useMemo(
     () => standaloneTokens.reduce((sum, t) => sum + t.finalCount, 0),
     [standaloneTokens]
@@ -97,20 +180,44 @@ export function Battlefield() {
 
   const groupedTokens = useMemo(() => {
     const currentTurn = state.currentTurn;
-    const grouped = new Map<string, { ids: string[]; totalCount: number; thisTurnCount: number; token: typeof standaloneTokens[0] }>();
+    const grouped = new Map<string, { ids: string[]; totalCount: number; thisTurnCount: number; sources: Set<string>; breakdowns: string[]; token: typeof standaloneTokens[0] }>();
     for (const token of standaloneTokens) {
-      const key = `${token.tokenDef.name}|${token.tokenDef.power ?? ''}|${token.tokenDef.toughness ?? ''}|${token.sourceName}|${token.copyOfDeckIndex ?? ''}`;
+      // Group by token identity only (name + P/T), not by source — merges all Treasures, etc.
+      const key = `${token.tokenDef.name}|${token.tokenDef.power ?? ''}|${token.tokenDef.toughness ?? ''}`;
       const existing = grouped.get(key);
       const isThisTurn = token.createdOnTurn === currentTurn;
       if (existing) {
         existing.ids.push(token.id);
         existing.totalCount += token.finalCount;
+        existing.sources.add(token.sourceName);
+        if (!existing.breakdowns.includes(token.breakdown)) existing.breakdowns.push(token.breakdown);
         if (isThisTurn) existing.thisTurnCount += token.finalCount;
       } else {
-        grouped.set(key, { ids: [token.id], totalCount: token.finalCount, thisTurnCount: isThisTurn ? token.finalCount : 0, token });
+        grouped.set(key, { ids: [token.id], totalCount: token.finalCount, thisTurnCount: isThisTurn ? token.finalCount : 0, sources: new Set([token.sourceName]), breakdowns: [token.breakdown], token });
       }
     }
-    return Array.from(grouped.values());
+
+    const result = Array.from(grouped.values());
+
+    // Detect count changes for animation
+    const newCounts = new Map<string, number>();
+    const toAnimate = new Set<string>();
+    for (const g of result) {
+      const key = g.ids[0];
+      newCounts.set(key, g.totalCount);
+      const prev = prevTokenCountsRef.current.get(key);
+      if (prev !== undefined && prev !== g.totalCount) {
+        toAnimate.add(key);
+      }
+    }
+    prevTokenCountsRef.current = newCounts;
+
+    if (toAnimate.size > 0) {
+      setAnimatingIds(toAnimate);
+      setTimeout(() => setAnimatingIds(new Set()), 500);
+    }
+
+    return result;
   }, [standaloneTokens, state.currentTurn]);
 
   if (state.importStatus !== 'done') return null;
@@ -129,8 +236,16 @@ export function Battlefield() {
   return (
     <div className="battlefield-panel">
       <div className="battlefield-header">
-        <h2>Battlefield</h2>
+        <h2>
+          Battlefield <span className="turn-badge">Turn {state.currentTurn}</span>
+          {creatureCount > 0 && <span className="creature-count">{creatureCount} creatures</span>}
+        </h2>
         <div className="battlefield-actions">
+          {state.undoStack.length > 0 && (
+            <button className="undo-btn" onClick={handleUndo} title="Undo last action">
+              Undo
+            </button>
+          )}
           <button
             className="land-played-btn"
             onClick={handleLandPlayed}
@@ -146,6 +261,13 @@ export function Battlefield() {
           >
             New Turn
           </button>
+          <button
+            className="history-btn secondary"
+            onClick={() => setShowHistory(!showHistory)}
+            title="Toggle turn history"
+          >
+            {showHistory ? 'Hide Log' : 'Log'}
+          </button>
         </div>
       </div>
 
@@ -157,45 +279,85 @@ export function Battlefield() {
         </div>
       )}
 
-      {/* Permanent cards in play */}
-      {battlefield.length > 0 && (
+      {/* Turn history log */}
+      {showHistory && (
+        <div className="history-log">
+          <h4>Turn History</h4>
+          {state.history.length === 0 ? (
+            <p className="empty-state">No actions yet.</p>
+          ) : (
+            <ul>
+              {[...state.history].reverse().map((entry, i) => (
+                <li key={i} className="history-entry">
+                  <span className="history-turn">T{entry.turn}</span>
+                  <span className="history-label">{entry.label}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Permanent cards in play — grouped by trigger type */}
+      {triggerGroups.length > 0 && (
         <div className={`battlefield-cards${populateMode ? ' populate-dimmed' : ''}`}>
           <h3>Cards in Play</h3>
-          {Array.from(activeCards.entries()).map(([deckIdx, instanceIds]) => {
-            const card = deckCards[deckIdx];
-            const isGenerator = card.category === 'token-generator' || card.category === 'both';
-            const triggerLabel = card.triggerInfo?.label;
-            const cardHasCondition = card.tokens.some(t => t.isConditional);
-            const conditionLabel = card.tokens.find(t => t.isConditional)?.condition;
+          {triggerGroups.map(group => (
+            <div key={group.key} className="trigger-group">
+              <h4 className={`trigger-group-label trigger-group-${group.key}`}>{group.label}</h4>
+              {group.cards.map(({ deckIdx, instanceIds }) => {
+                const card = deckCards[deckIdx];
+                const isGenerator = card.category === 'token-generator' || card.category === 'both';
+                const triggerLabel = card.triggerInfo?.label;
+                const conditionalTokens = card.tokens.filter(t => t.isConditional);
 
-            return instanceIds.map(instanceId => {
-              const bc = battlefield.find(b => b.instanceId === instanceId);
-              return (
-                <CardRow
-                  key={instanceId}
-                  card={card}
-                  inPlayCount={instanceIds.length}
-                  onRemove={() => handleRemoveCard(instanceId)}
-                  showRemoveButton
-                  onTrigger={isGenerator ? () => handleTrigger(deckIdx) : undefined}
-                  triggerLabel={triggerLabel}
-                  showCondition={cardHasCondition}
-                  conditionMet={bc?.conditionMet ?? false}
-                  conditionLabel={conditionLabel}
-                  onToggleCondition={() => dispatch({ type: 'TOGGLE_CONDITION', payload: { instanceId } })}
-                />
-              );
-            });
-          })}
+                return instanceIds.map(instanceId => {
+                  const bc = battlefield.find(b => b.instanceId === instanceId);
+                  const conditionsMet = bc?.conditionsMet ?? {};
+                  const conditions = conditionalTokens.map(t => ({
+                    tokenName: t.name,
+                    label: t.condition || t.name,
+                    checked: conditionsMet[t.name] ?? false,
+                  }));
+
+                  return (
+                    <CardRow
+                      key={instanceId}
+                      card={card}
+                      inPlayCount={instanceIds.length}
+                      onRemove={() => handleRemoveCard(instanceId)}
+                      showRemoveButton
+                      onTrigger={isGenerator ? () => handleTrigger(deckIdx) : undefined}
+                      triggerLabel={triggerLabel}
+                      conditions={conditions}
+                      onToggleCondition={(tokenName) => dispatch({ type: 'TOGGLE_CONDITION', payload: { instanceId, tokenName } })}
+                    />
+                  );
+                });
+              })}
+            </div>
+          ))}
         </div>
       )}
 
       {/* All tokens — merged identical tokens */}
       {groupedTokens.length > 0 && (
         <div className="token-battlefield">
-          <h3>Tokens ({totalTokens})</h3>
+          <div className="token-header">
+            <h3>Tokens ({totalTokens})</h3>
+            <div className="token-bulk-actions">
+              {standaloneTokens.some(t => t.createdOnTurn === state.currentTurn) && (
+                <button className="bulk-clear-btn secondary" onClick={handleClearTurnTokens} title="Remove tokens created this turn">
+                  Clear This Turn
+                </button>
+              )}
+              <button className="bulk-clear-btn danger" onClick={handleClearAllTokens} title="Remove all tokens (board wipe)">
+                Clear All
+              </button>
+            </div>
+          </div>
           <div className="token-grid">
-            {groupedTokens.map(({ ids, totalCount, thisTurnCount, token }) => {
+            {groupedTokens.map(({ ids, totalCount, thisTurnCount, sources, breakdowns, token }) => {
               const copySource = token.copyOfDeckIndex !== undefined
                 ? deckCards[token.copyOfDeckIndex]
                 : undefined;
@@ -203,15 +365,22 @@ export function Battlefield() {
                 || copySource?.scryfallData.card_faces?.[0]?.image_uris?.art_crop;
               const artUrl = token.tokenArt?.imageUrl || copyArtUrl;
               const artAlt = token.tokenArt?.name || copySource?.scryfallData.name || token.tokenDef.name;
+              const hasPT = token.tokenDef.power && token.tokenDef.toughness;
+              const keywords = token.tokenDef.keywords?.filter(k => k) ?? [];
+              const isAnimating = animatingIds.has(ids[0]);
+              const breakdownText = breakdowns.join('\n');
+              const borderColor = getTokenBorderColor(token.tokenDef);
 
               return (
               <div
                 key={ids[0]}
-                className={`token-tile${populateMode ? ' populate-selectable' : ''}`}
+                className={`token-tile${populateMode ? ' populate-selectable' : ''}${isAnimating ? ' token-animate' : ''}`}
+                style={{ borderColor }}
                 onClick={populateMode ? () => handlePopulateSelect(token) : undefined}
                 role={populateMode ? 'button' : undefined}
                 tabIndex={populateMode ? 0 : undefined}
                 onKeyDown={populateMode ? (e) => { if (e.key === 'Enter') handlePopulateSelect(token); } : undefined}
+                title={breakdownText}
               >
                 {!populateMode && (
                 <button
@@ -234,19 +403,33 @@ export function Battlefield() {
                     <div className="token-count-overlay">
                       <span className="token-count-number">{totalCount}</span>
                     </div>
+                    {hasPT && (
+                      <div className="token-pt-badge">
+                        {token.tokenDef.power}/{token.tokenDef.toughness}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="token-art-placeholder">
                     <span className="token-count-number">{totalCount}</span>
+                    {hasPT && (
+                      <div className="token-pt-badge-placeholder">
+                        {token.tokenDef.power}/{token.tokenDef.toughness}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="token-tile-info">
                   <span className="token-tile-name">
-                    {token.tokenDef.power && `${token.tokenDef.power}/${token.tokenDef.toughness} `}
                     {token.tokenDef.name}
                   </span>
-                  <span className="token-tile-source">
-                    from {token.sourceName}
+                  {keywords.length > 0 && (
+                    <span className="token-keywords">
+                      {keywords.join(', ')}
+                    </span>
+                  )}
+                  <span className="token-tile-source" title={Array.from(sources).join(', ')}>
+                    from {sources.size === 1 ? Array.from(sources)[0] : `${sources.size} sources`}
                   </span>
                   {thisTurnCount > 0 && thisTurnCount < totalCount && (
                     <span className="token-tile-turn-info">+{thisTurnCount} this turn</span>

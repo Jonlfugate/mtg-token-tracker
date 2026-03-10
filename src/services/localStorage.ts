@@ -10,7 +10,9 @@ interface StorageWrapper {
 
 export function saveState(state: AppState): void {
   try {
-    const wrapper: StorageWrapper = { version: SCHEMA_VERSION, state };
+    // Don't persist undoStack (too large) — it's session-only
+    const toSave = { ...state, undoStack: [] };
+    const wrapper: StorageWrapper = { version: SCHEMA_VERSION, state: toSave };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(wrapper));
   } catch (err) {
     if (err instanceof DOMException && err.name === 'QuotaExceededError') {

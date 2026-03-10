@@ -1,4 +1,4 @@
-import type { ScryfallCard, TokenArt } from '../types';
+import type { ScryfallCard, TokenArt, ScryfallTokenData } from '../types';
 
 const BASE_URL = 'https://api.scryfall.com';
 const REQUEST_DELAY_MS = 80;
@@ -42,38 +42,56 @@ async function fetchCard(name: string): Promise<ScryfallCard> {
   return res.json();
 }
 
-async function fetchTokenArt(uri: string): Promise<TokenArt | null> {
+const COLOR_MAP: Record<string, string> = {
+  W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green',
+};
+
+interface FetchedTokenResult {
+  art: TokenArt | null;
+  data: ScryfallTokenData | null;
+}
+
+async function fetchTokenCard(uri: string): Promise<FetchedTokenResult> {
   try {
     const res = await fetchWithTimeout(uri);
-    if (!res.ok) return null;
-    const data: ScryfallCard = await res.json();
+    if (!res.ok) return { art: null, data: null };
+    const raw = await res.json();
+    const data = raw as ScryfallCard;
     const imageUrl = data.image_uris?.art_crop
       || data.card_faces?.[0]?.image_uris?.art_crop
       || data.image_uris?.normal
       || data.card_faces?.[0]?.image_uris?.normal;
-    if (!imageUrl) return null;
 
-    // Token cards in Scryfall have power/toughness as top-level fields
-    // but our type doesn't include them, so extract from the raw JSON
-    const raw = data as unknown as Record<string, string>;
-
-    return {
+    const art: TokenArt | null = imageUrl ? {
       name: data.name,
       imageUrl,
       typeLine: data.type_line,
       power: raw.power || undefined,
       toughness: raw.toughness || undefined,
+    } : null;
+
+    const tokenData: ScryfallTokenData = {
+      name: data.name,
+      power: raw.power || undefined,
+      toughness: raw.toughness || undefined,
+      colors: (raw.colors || []).map((c: string) => COLOR_MAP[c] || c.toLowerCase()),
+      type_line: data.type_line,
+      keywords: raw.keywords || [],
+      oracle_text: data.oracle_text,
+      imageUrl: imageUrl || undefined,
     };
+
+    return { art, data: tokenData };
   } catch {
-    return null;
+    return { art: null, data: null };
   }
 }
 
 export async function fetchAllCards(
   cardNames: string[],
   onProgress: (done: number, total: number) => void
-): Promise<Map<string, { card: ScryfallCard; tokenArt: TokenArt[] }>> {
-  const results = new Map<string, { card: ScryfallCard; tokenArt: TokenArt[] }>();
+): Promise<Map<string, { card: ScryfallCard; tokenArt: TokenArt[]; tokenData: ScryfallTokenData[] }>> {
+  const results = new Map<string, { card: ScryfallCard; tokenArt: TokenArt[]; tokenData: ScryfallTokenData[] }>();
   const uniqueNames = [...new Set(cardNames)];
 
   // Phase 1: Fetch all cards
@@ -105,15 +123,13 @@ export async function fetchAllCards(
     }
   }
 
-  // Fetch all token art
-  const tokenArtCache = new Map<string, TokenArt>();
+  // Fetch all token cards (art + data)
+  const tokenCache = new Map<string, FetchedTokenResult>();
   const tokenUris = Array.from(tokenUriMap.keys());
   for (let i = 0; i < tokenUris.length; i++) {
     const uri = tokenUris[i];
-    const art = await fetchTokenArt(uri);
-    if (art) {
-      tokenArtCache.set(uri, art);
-    }
+    const result = await fetchTokenCard(uri);
+    tokenCache.set(uri, result);
     if (i < tokenUris.length - 1) {
       await delay(REQUEST_DELAY_MS);
     }
@@ -122,15 +138,17 @@ export async function fetchAllCards(
   // Phase 3: Assemble results
   for (const [name, card] of cardMap.entries()) {
     const tokenArt: TokenArt[] = [];
+    const tokenData: ScryfallTokenData[] = [];
     if (card.all_parts) {
       for (const part of card.all_parts) {
         if (part.component === 'token') {
-          const art = tokenArtCache.get(part.uri);
-          if (art) tokenArt.push(art);
+          const cached = tokenCache.get(part.uri);
+          if (cached?.art) tokenArt.push(cached.art);
+          if (cached?.data) tokenData.push(cached.data);
         }
       }
     }
-    results.set(name, { card, tokenArt });
+    results.set(name, { card, tokenArt, tokenData });
   }
 
   return results;

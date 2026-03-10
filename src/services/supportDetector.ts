@@ -34,22 +34,26 @@ function getOracleText(card: ScryfallCard): string {
 
 export function detectSupport(card: ScryfallCard): SupportEffect | undefined {
   const oracleText = getOracleText(card);
+  const abilities = oracleText.split('\n').filter(line => line.trim().length > 0);
 
-  for (const pattern of SUPPORT_PATTERNS) {
-    const match = oracleText.match(pattern.regex);
-    if (match) {
-      // Try to detect condition (creature tokens only, etc.)
-      let condition: string | undefined;
-      if (/creature\s+token/i.test(oracleText) && !/token/i.test(oracleText.replace(/creature\s+token/gi, ''))) {
-        condition = 'creature tokens';
+  // Check each ability line independently
+  for (const ability of abilities) {
+    for (const pattern of SUPPORT_PATTERNS) {
+      const match = ability.match(pattern.regex);
+      if (match) {
+        // Try to detect condition (creature tokens only, etc.)
+        let condition: string | undefined;
+        if (/creature\s+token/i.test(ability) && !/token/i.test(ability.replace(/creature\s+token/gi, ''))) {
+          condition = 'creature tokens';
+        }
+
+        return {
+          type: pattern.type,
+          factor: pattern.factor,
+          condition,
+          rawText: match[0],
+        };
       }
-
-      return {
-        type: pattern.type,
-        factor: pattern.factor,
-        condition,
-        rawText: match[0],
-      };
     }
   }
 

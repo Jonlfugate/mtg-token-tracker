@@ -14,16 +14,17 @@ const EXAMPLE_DECK = `1 Doubling Season (2X2) 175
 1 Felidar Retreat (ZNR) 16
 37 Forest (ZNR) 384`;
 
-export function DeckImport() {
+export function DeckImport({ onDeckLoaded }: { onDeckLoaded?: () => void }) {
   const [text, setText] = useState('');
   const { importDeck } = useDeckImport();
   const { state, dispatch } = useAppContext();
 
   const isLoading = state.importStatus === 'fetching';
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (text.trim()) {
-      importDeck(text);
+      await importDeck(text);
+      onDeckLoaded?.();
     }
   };
 
