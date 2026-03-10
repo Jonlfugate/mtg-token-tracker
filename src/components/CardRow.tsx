@@ -187,21 +187,8 @@ export const CardRow = memo(function CardRow({
     if (!isTouchDevice()) return;
     const target = e.target as HTMLElement;
     if (target.closest('button, input, label, .token-thumb')) return;
-    calcPopupPosition();
     setShowImage(prev => !prev);
   }, []);
-
-  // Close card popup on outside tap
-  useEffect(() => {
-    if (!showImage || !isTouchDevice()) return;
-    const close = (e: TouchEvent) => {
-      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
-        setShowImage(false);
-      }
-    };
-    document.addEventListener('touchstart', close);
-    return () => document.removeEventListener('touchstart', close);
-  }, [showImage]);
 
   return (
     <div
@@ -322,9 +309,15 @@ export const CardRow = memo(function CardRow({
         )}
       </div>
 
-      {showImage && imageUri && (
+      {showImage && imageUri && !isTouchDevice() && (
         <div className="card-image-popup" style={popupStyle}>
           <img src={imageUri} alt={card.scryfallData.name} />
+        </div>
+      )}
+
+      {showImage && imageUri && isTouchDevice() && (
+        <div className="card-modal-overlay" onClick={() => setShowImage(false)}>
+          <img src={imageUri} alt={card.scryfallData.name} className="card-modal-img" />
         </div>
       )}
     </div>
