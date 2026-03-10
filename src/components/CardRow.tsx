@@ -144,31 +144,50 @@ export const CardRow = memo(function CardRow({
   compact,
 }: CardRowProps) {
   const [showImage, setShowImage] = useState(false);
-  const [popupAbove, setPopupAbove] = useState(false);
+  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
   const rowRef = useRef<HTMLDivElement>(null);
   const imageUri = getImageUri(card);
   const artCropUri = getArtCropUri(card);
   const maxQty = card.decklistEntry.quantity;
   const canPlay = inPlayCount < maxQty;
 
+  const calcPopupPosition = () => {
+    if (!rowRef.current) return;
+    const rect = rowRef.current.getBoundingClientRect();
+    const popupH = 350;
+    const popupW = 260; // 250 img + 10 margin
+    const style: React.CSSProperties = {};
+
+    // Horizontal: prefer right side, fall back to left
+    if (rect.right + popupW > window.innerWidth) {
+      style.left = 'auto';
+      style.right = '100%';
+      style.marginRight = '10px';
+      style.marginLeft = '0';
+    }
+
+    // Vertical: clamp so popup stays within viewport
+    let top = rect.top;
+    if (top + popupH > window.innerHeight) {
+      top = window.innerHeight - popupH - 8;
+    }
+    if (top < 8) top = 8;
+    style.top = `${top - rect.top}px`;
+
+    setPopupStyle(style);
+  };
+
   const handleMouseEnter = () => {
     if (isTouchDevice()) return;
-    if (rowRef.current) {
-      const rect = rowRef.current.getBoundingClientRect();
-      setPopupAbove(rect.top + 350 > window.innerHeight);
-    }
+    calcPopupPosition();
     setShowImage(true);
   };
 
   const handleTap = useCallback((e: React.MouseEvent) => {
     if (!isTouchDevice()) return;
-    // Don't show popup if tapping on buttons or interactive elements
     const target = e.target as HTMLElement;
     if (target.closest('button, input, label, .token-thumb')) return;
-    if (rowRef.current) {
-      const rect = rowRef.current.getBoundingClientRect();
-      setPopupAbove(rect.top + 350 > window.innerHeight);
-    }
+    calcPopupPosition();
     setShowImage(prev => !prev);
   }, []);
 
@@ -304,7 +323,7 @@ export const CardRow = memo(function CardRow({
       </div>
 
       {showImage && imageUri && (
-        <div className={`card-image-popup${popupAbove ? ' popup-above' : ''}`}>
+        <div className="card-image-popup" style={popupStyle}>
           <img src={imageUri} alt={card.scryfallData.name} />
         </div>
       )}

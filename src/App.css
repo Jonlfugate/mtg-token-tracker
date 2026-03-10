@@ -577,15 +577,10 @@ button.danger:hover:not(:disabled) {
 .card-image-popup {
   position: absolute;
   z-index: 100;
-  top: -10px;
+  top: 0;
   left: 100%;
   margin-left: 10px;
   pointer-events: none;
-}
-
-.card-image-popup.popup-above {
-  top: auto;
-  bottom: -10px;
 }
 
 .card-image-popup img {
