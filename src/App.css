@@ -506,22 +506,11 @@ button.danger:hover:not(:disabled) {
 .token-thumb-popup {
   position: absolute;
   z-index: 110;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-top: 6px;
   pointer-events: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.25rem;
-}
-
-.token-thumb-popup.popup-above {
-  top: auto;
-  bottom: 100%;
-  margin-top: 0;
-  margin-bottom: 6px;
 }
 
 .token-thumb-popup img {

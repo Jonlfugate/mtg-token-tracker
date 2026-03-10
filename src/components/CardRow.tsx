@@ -77,13 +77,35 @@ function findTokenArt(tokenDef: TokenDefinition, card: DeckCard): { thumbUrl?: s
 function TokenThumb({ tokenDef, thumbUrl, popupUrl }: { tokenDef: TokenDefinition; thumbUrl?: string; popupUrl?: string }) {
   const [show, setShow] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
-  const [above, setAbove] = useState(false);
+  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
 
   const calcPosition = () => {
-    if (ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      setAbove(rect.bottom + 220 > window.innerHeight);
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const popupW = 160;
+    const popupH = 230;
+    const style: React.CSSProperties = {};
+
+    // Vertical: prefer below, flip above if no room
+    if (rect.bottom + popupH + 6 > window.innerHeight) {
+      style.top = 'auto';
+      style.bottom = '100%';
+      style.marginBottom = '6px';
+    } else {
+      style.top = '100%';
+      style.marginTop = '6px';
     }
+
+    // Horizontal: center on thumb, but clamp to viewport
+    const thumbCenter = rect.left + rect.width / 2;
+    let leftOffset = thumbCenter - popupW / 2;
+    if (leftOffset < 8) leftOffset = 8;
+    if (leftOffset + popupW > window.innerWidth - 8) leftOffset = window.innerWidth - popupW - 8;
+    // Convert to relative offset from thumb's left
+    style.left = `${leftOffset - rect.left}px`;
+    style.transform = 'none';
+
+    setPopupStyle(style);
   };
 
   const handleEnter = () => {
@@ -127,7 +149,7 @@ function TokenThumb({ tokenDef, thumbUrl, popupUrl }: { tokenDef: TokenDefinitio
         <span className="token-thumb-text">{tokenDef.name.charAt(0)}</span>
       )}
       {show && (
-        <div className={`token-thumb-popup${above ? ' popup-above' : ''}`}>
+        <div className="token-thumb-popup" style={popupStyle}>
           {popupUrl && <img src={popupUrl} alt={tokenDef.name} />}
           <span className="token-thumb-popup-label">{label}</span>
         </div>
