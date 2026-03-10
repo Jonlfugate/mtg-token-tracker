@@ -261,7 +261,19 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       // Find the battlefield instance to check its conditionMet state
       const bc = state.battlefield.find(b => b.deckCardIndex === deckCardIndex);
       const conditionMet = bc?.conditionsMet ?? {};
-      const activeCard = getActiveTokens(deckCard, conditionMet);
+      let activeCard = getActiveTokens(deckCard, conditionMet);
+
+      // Handle self-copies countMode: count from battlefield state
+      const hasSelfCopies = activeCard.tokens.some(t => t.countMode === 'self-copies');
+      if (hasSelfCopies) {
+        const inPlay = state.battlefield.filter(b => b.deckCardIndex === deckCardIndex).length;
+        activeCard = {
+          ...activeCard,
+          tokens: activeCard.tokens.map(t =>
+            t.countMode === 'self-copies' ? { ...t, count: inPlay - 1 } : t
+          ),
+        };
+      }
 
       const supportCards = state.battlefield
         .map(b => state.deckCards[b.deckCardIndex])

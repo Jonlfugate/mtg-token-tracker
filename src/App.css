@@ -560,6 +560,9 @@ button.danger:hover:not(:disabled) {
 
 .card-actions {
   flex-shrink: 0;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
 }
 
 /* Card Image Popup */
