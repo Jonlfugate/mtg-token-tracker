@@ -12,7 +12,7 @@ interface TriggerPattern {
 // Patterns to detect what trigger an ability line uses.
 // Order matters — more specific patterns first.
 const TRIGGER_PATTERNS: TriggerPattern[] = [
-  { regex: /whenever a land (?:you control )?enters/i, type: 'landfall', label: 'Landfall' },
+  { regex: /whenever (?:a |this )?land.*(?:you control )?enters/i, type: 'landfall', label: 'Landfall' },
   { regex: /landfall/i, type: 'landfall', label: 'Landfall' },
   { regex: /at the beginning of (?:each|your) upkeep/i, type: 'upkeep', label: 'Upkeep' },
   { regex: /at the beginning of (?:each|your) (?:end step|first main phase)/i, type: 'upkeep', label: 'End Step' },

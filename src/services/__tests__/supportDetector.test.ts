@@ -54,9 +54,42 @@ describe('detectSupport', () => {
     expect(result!.factor).toBe(1);
   });
 
-  it('detects Chatterfang as companion support with factor 1', () => {
+  it('detects Chatterfang (real oracle text) as companion support', () => {
+    // Real Scryfall oracle text for Chatterfang, Squirrel General
     const card = makeCard(
-      'Forestwalk\nWhenever you create one or more tokens, also create that many 1/1 green Squirrel creature tokens.\n{B}, Sacrifice X Squirrels: Target creature gets +X/-X until end of turn.'
+      'Forestwalk (This creature can\'t be blocked as long as defending player controls a Forest.)\nIf one or more tokens would be created under your control, those tokens plus that many 1/1 green Squirrel creature tokens are created instead.\n{B}, Sacrifice X Squirrels: Target creature gets +X/-X until end of turn.'
+    );
+    const result = detectSupport(card);
+    expect(result).toBeDefined();
+    expect(result!.type).toBe('companion');
+    expect(result!.factor).toBe(1);
+  });
+
+  it('detects Chatterfang (alternative wording) as companion support', () => {
+    // Alternative/older wording style
+    const card = makeCard(
+      'Whenever you create one or more tokens, also create that many 1/1 green Squirrel creature tokens.'
+    );
+    const result = detectSupport(card);
+    expect(result).toBeDefined();
+    expect(result!.type).toBe('companion');
+    expect(result!.factor).toBe(1);
+  });
+
+  it('detects Mondrak as multiplier x2 (real oracle text)', () => {
+    const card = makeCard(
+      'If one or more tokens would be created under your control, twice that many of those tokens are created instead.\n{1}{W/P}{W/P}, Sacrifice two other artifacts and/or creatures: Put an indestructible counter on Mondrak.'
+    );
+    const result = detectSupport(card);
+    expect(result).toBeDefined();
+    expect(result!.type).toBe('multiplier');
+    expect(result!.factor).toBe(2);
+  });
+
+  it('detects Academy Manufactor (real oracle text) as companion', () => {
+    // Real Scryfall oracle text (shorter than previous test)
+    const card = makeCard(
+      'If you would create a Clue, Food, or Treasure token, instead create one of each.'
     );
     const result = detectSupport(card);
     expect(result).toBeDefined();

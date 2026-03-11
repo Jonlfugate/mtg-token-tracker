@@ -5,7 +5,33 @@ import { fetchAllCards } from '../services/scryfallApi';
 import { detectTokens } from '../services/tokenDetector';
 import { detectSupport } from '../services/supportDetector';
 import { detectTriggerType } from '../services/triggerDetector';
-import type { CardCategory } from '../types';
+import type { CardCategory, ScryfallTokenData, TokenDefinition } from '../types';
+
+const KEYWORDS = [
+  'flying', 'haste', 'trample', 'vigilance', 'lifelink', 'deathtouch',
+  'first strike', 'double strike', 'menace', 'reach', 'hexproof',
+  'indestructible', 'defender',
+];
+
+/** Build a TokenDefinition from Scryfall token data (for companion cards like Chatterfang) */
+function tokenDefFromData(data: ScryfallTokenData): TokenDefinition {
+  const types: string[] = [];
+  const typeLine = data.type_line.toLowerCase();
+  if (typeLine.includes('creature')) types.push('creature');
+  if (typeLine.includes('artifact')) types.push('artifact');
+  if (typeLine.includes('enchantment')) types.push('enchantment');
+
+  return {
+    count: 1,
+    power: data.power || '',
+    toughness: data.toughness || '',
+    colors: data.colors,
+    name: data.name,
+    types: types.length > 0 ? types : ['creature'],
+    keywords: data.keywords.filter(k => KEYWORDS.includes(k.toLowerCase())).map(k => k.toLowerCase()),
+    rawText: `${data.power || ''}/${data.toughness || ''} ${data.colors.join(' ')} ${data.name}`.trim(),
+  };
+}
 
 export function useDeckImport() {
   const { dispatch } = useAppContext();
@@ -35,6 +61,16 @@ export function useDeckImport() {
           const supportEffect = detectSupport(scryfallData);
           const oracleText = scryfallData.oracle_text || scryfallData.card_faces?.map(f => f.oracle_text || '').join('\n') || '';
           const hasPopulate = /\bpopulate\b/i.test(oracleText);
+
+          // Companion cards like Chatterfang create their own token type but
+          // detectTokens skips them (isReplacementEffect). Populate from Scryfall
+          // token data so the reducer knows what companion token to create.
+          const isManufactorStyle = supportEffect?.type === 'companion'
+            && /instead\s+create\s+one\s+of\s+each/i.test(oracleText);
+          if (supportEffect?.type === 'companion' && !isManufactorStyle && tokens.length === 0 && tokenData.length > 0) {
+            tokens.push(tokenDefFromData(tokenData[0]));
+          }
+
           const isGenerator = tokens.length > 0 || hasPopulate;
           const triggerInfo = isGenerator ? detectTriggerType(scryfallData) ?? undefined : undefined;
 

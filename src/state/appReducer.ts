@@ -111,8 +111,10 @@ const MANUFACTOR_TOKEN_NAMES = new Set(['treasure', 'clue', 'food']);
 /**
  * Create companion tokens whenever other tokens are created.
  * Handles two patterns:
- * - Chatterfang: creates Squirrels equal to total tokens created
  * - Academy Manufactor: replaces each Clue/Food/Treasure with one of each
+ *   (processed first; multiple Manufactors stack per MTG rules)
+ * - Chatterfang: creates Squirrels equal to total tokens created
+ *   (processed after Manufactors so Squirrel count includes Manufactor output)
  */
 function createCompanionTokens(
   state: AppState,
@@ -121,83 +123,111 @@ function createCompanionTokens(
 ): StandaloneToken[] {
   if (newTokens.length === 0) return [];
 
-  const companionTokens: StandaloneToken[] = [];
-
   // Non-companion support cards for multiplier calculations
   const supportCards = state.battlefield
     .map(b => state.deckCards[b.deckCardIndex])
     .filter(c => (c.category === 'support' || c.category === 'both') && c.supportEffect?.type !== 'companion');
 
+  // Separate Manufactor-type and Chatterfang-type companions
+  const manufactors: BattlefieldCard[] = [];
+  const chatterfangs: BattlefieldCard[] = [];
+
   for (const bc of state.battlefield) {
     const card = state.deckCards[bc.deckCardIndex];
     if (!card.supportEffect || card.supportEffect.type !== 'companion') continue;
-    // Don't trigger from own token creation (prevent infinite loops)
     if (bc.deckCardIndex === sourceCardIndex) continue;
 
     const oracleText = card.scryfallData.oracle_text?.toLowerCase() ?? '';
-    const isOneOfEach = /instead\s+create\s+one\s+of\s+each/i.test(oracleText);
-
-    if (isOneOfEach) {
-      // Academy Manufactor pattern: for each Clue/Food/Treasure created,
-      // also create the other two types with the same count
-      for (const token of newTokens) {
-        const tokenName = token.tokenDef.name.toLowerCase();
-        if (!MANUFACTOR_TOKEN_NAMES.has(tokenName)) continue;
-
-        // Create the two missing artifact token types
-        for (const [name, def] of Object.entries(ARTIFACT_TOKEN_DEFS)) {
-          if (name === tokenName) continue; // already being created
-          const companionCard: DeckCard = {
-            ...card,
-            tokens: [{ ...def, count: token.finalCount }],
-          };
-          const results = calculateTokens(companionCard, supportCards);
-          companionTokens.push(...createStandaloneTokens(
-            results,
-            card.scryfallData.name,
-            bc.deckCardIndex,
-            state.currentTurn,
-          ));
-        }
-      }
+    if (/instead\s+create\s+one\s+of\s+each/i.test(oracleText)) {
+      manufactors.push(bc);
     } else {
-      // Chatterfang pattern: create companion's own token equal to total created
-      if (card.tokens.length === 0) continue;
-      const totalTokensCreated = newTokens.reduce((sum, t) => sum + t.finalCount, 0);
-      const companionCard: DeckCard = {
-        ...card,
-        tokens: [{ ...card.tokens[0], count: totalTokensCreated }],
-      };
-      const results = calculateTokens(companionCard, supportCards);
-      companionTokens.push(...createStandaloneTokens(
-        results,
-        card.scryfallData.name,
-        bc.deckCardIndex,
-        state.currentTurn,
-      ));
+      chatterfangs.push(bc);
     }
   }
 
-  return companionTokens;
+  // --- Phase 1: Academy Manufactor stacking ---
+  // Each Manufactor replaces every Clue/Food/Treasure with one of each.
+  // Multiple Manufactors stack: each subsequent one processes the output of the previous.
+  // Per MTG rulings: 2 Manufactors + 1 Treasure = 3 Treasure + 3 Clue + 3 Food (9 total).
+  let manufactorTokens: StandaloneToken[] = [];
+  // Track all artifact tokens (originals + generated) for iterative processing
+  let artifactPool = newTokens.filter(t => MANUFACTOR_TOKEN_NAMES.has(t.tokenDef.name.toLowerCase()));
+
+  for (const bc of manufactors) {
+    const card = state.deckCards[bc.deckCardIndex];
+    const batchTokens: StandaloneToken[] = [];
+
+    for (const token of artifactPool) {
+      const tokenName = token.tokenDef.name.toLowerCase();
+      if (!MANUFACTOR_TOKEN_NAMES.has(tokenName)) continue;
+
+      // Create the two missing artifact token types
+      for (const [name, def] of Object.entries(ARTIFACT_TOKEN_DEFS)) {
+        if (name === tokenName) continue; // already being created
+        const companionCard: DeckCard = {
+          ...card,
+          tokens: [{ ...def, count: token.finalCount }],
+        };
+        const results = calculateTokens(companionCard, supportCards);
+        batchTokens.push(...createStandaloneTokens(
+          results,
+          card.scryfallData.name,
+          bc.deckCardIndex,
+          state.currentTurn,
+        ));
+      }
+    }
+
+    manufactorTokens.push(...batchTokens);
+    // Next Manufactor processes both the original pool AND this Manufactor's output
+    artifactPool = [...artifactPool, ...batchTokens.filter(t => MANUFACTOR_TOKEN_NAMES.has(t.tokenDef.name.toLowerCase()))];
+  }
+
+  // --- Phase 2: Chatterfang-type companions ---
+  // Squirrel count is based on ALL tokens created (original + Manufactor output)
+  const allTokensSoFar = [...newTokens, ...manufactorTokens];
+  const chatterfangTokens: StandaloneToken[] = [];
+
+  for (const bc of chatterfangs) {
+    const card = state.deckCards[bc.deckCardIndex];
+    if (card.tokens.length === 0) continue;
+
+    const totalTokensCreated = allTokensSoFar.reduce((sum, t) => sum + t.finalCount, 0);
+    const companionCard: DeckCard = {
+      ...card,
+      tokens: [{ ...card.tokens[0], count: totalTokensCreated }],
+    };
+    const results = calculateTokens(companionCard, supportCards);
+    chatterfangTokens.push(...createStandaloneTokens(
+      results,
+      card.scryfallData.name,
+      bc.deckCardIndex,
+      state.currentTurn,
+    ));
+  }
+
+  return [...manufactorTokens, ...chatterfangTokens];
 }
 
-/** Convert TokenCalculationResults into StandaloneTokens */
+/** Convert TokenCalculationResults into StandaloneTokens (filters out zero-count tokens) */
 function createStandaloneTokens(
   results: TokenCalculationResult[],
   sourceName: string,
   deckCardIndex: number,
   currentTurn: number,
 ): StandaloneToken[] {
-  return results.map(calc => ({
-    id: crypto.randomUUID(),
-    tokenDef: calc.baseTokens,
-    tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
-    finalCount: calc.finalCount,
-    breakdown: calc.breakdown,
-    sourceName,
-    copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
-    createdOnTurn: currentTurn,
-  }));
+  return results
+    .filter(calc => calc.finalCount > 0)
+    .map(calc => ({
+      id: crypto.randomUUID(),
+      tokenDef: calc.baseTokens,
+      tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
+      finalCount: calc.finalCount,
+      breakdown: calc.breakdown,
+      sourceName,
+      copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
+      createdOnTurn: currentTurn,
+    }));
 }
 
 // --- Action types ---

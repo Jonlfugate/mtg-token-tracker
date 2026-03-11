@@ -190,6 +190,12 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
   // Detect if this card has a modal "choose one" pattern
   const isModal = /choose\s+one\s*(?:—|:|\.| or\s+both| or\s+more| that\s+hasn)/i.test(oracleText);
 
+  // Detect if this card has multiple activated abilities that create tokens
+  // (e.g., Rhys the Redeemed: two different {T} abilities)
+  const ACTIVATED_TOKEN_RE = /\{.*\}.*:.*create.*token/i;
+  const activatedTokenLines = abilities.filter(a => ACTIVATED_TOKEN_RE.test(a.replace(/\([^)]*\)/g, '')));
+  const hasMultipleActivated = activatedTokenLines.length > 1;
+
   // Detect if this card is purely a replacement effect (modifies other token creation)
   const isReplacementEffect = /\bif\b.*\bwould\b.*\btokens?\b.*\binstead\b/i.test(oracleText)
     || /\btokens?\b.*\bwould be created\b.*\binstead\b/i.test(oracleText);
@@ -204,6 +210,26 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
     let copyMatch;
     while ((copyMatch = COPY_TOKEN_REGEX.exec(ability)) !== null) {
       const rawCopyOf = copyMatch[1].trim();
+      // "For each creature token...copy of that creature" is a mass-populate effect
+      // Detect this and flag the card as having populate instead of skipping
+      if (/\b(?:for each|each)\b.*\bcreature token\b/i.test(ability) && /\b(?:that creature)\b/i.test(rawCopyOf)) {
+        // Mark as populate-style ability — handled by the populate system
+        // We'll set a flag that the import hook can read
+        if (!seen.has('_mass_populate')) {
+          seen.add('_mass_populate');
+          tokens.push({
+            count: -1,
+            power: '', toughness: '', colors: [],
+            name: 'Copy tokens',
+            types: ['creature'],
+            keywords: [],
+            rawText: ability.trim(),
+            isConditional: true,
+            condition: 'Copy tokens',
+          });
+        }
+        continue;
+      }
       // Skip generic copy effects ("copy of that creature/token") — these copy variable targets
       if (/\b(?:that creature|that token|each creature|each token|target creature|target)\b/i.test(rawCopyOf)) continue;
       const copyOf = rawCopyOf.replace(/\b(?:this creature|itself|it)\b/i, card.name);
@@ -308,6 +334,19 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
         if (isModal) {
           parsed.isConditional = true;
           parsed.condition = parsed.name;
+        }
+
+        // Multiple activated abilities on one card: mark as conditional so user can choose
+        if (hasMultipleActivated && ACTIVATED_TOKEN_RE.test(ability)) {
+          parsed.isConditional = true;
+          parsed.condition = parsed.condition || parsed.name;
+        }
+
+        // Detect "if you control no [type]" conditions (e.g., Ophiomancer)
+        const noControlMatch = ability.match(/if you control no (\w+)/i);
+        if (noControlMatch) {
+          parsed.isConditional = true;
+          parsed.condition = `No ${noControlMatch[1]}`;
         }
 
         const key = `${parsed.name}-${parsed.power}/${parsed.toughness}`;
