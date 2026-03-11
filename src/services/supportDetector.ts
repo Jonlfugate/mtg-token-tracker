@@ -1,4 +1,5 @@
 import type { SupportEffect, ScryfallCard } from '../types';
+import { getOracleText } from './cardUtils';
 
 interface SupportPattern {
   regex: RegExp;
@@ -23,14 +24,6 @@ const SUPPORT_PATTERNS: SupportPattern[] = [
   // "plus that many" (e.g. creates double)
   { regex: /creates?\s+(?:that\s+many\s+tokens?\s+)?plus\s+that\s+many/i, type: 'multiplier', factor: 2 },
 ];
-
-function getOracleText(card: ScryfallCard): string {
-  if (card.oracle_text) return card.oracle_text;
-  if (card.card_faces) {
-    return card.card_faces.map(f => f.oracle_text || '').join('\n');
-  }
-  return '';
-}
 
 export function detectSupport(card: ScryfallCard): SupportEffect | undefined {
   const oracleText = getOracleText(card);

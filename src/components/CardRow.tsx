@@ -1,6 +1,8 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import type { DeckCard, TokenDefinition } from '../types';
+import { CATEGORY_LABELS, CATEGORY_COLORS, TRIGGER_COLORS } from '../constants';
+import { usePopup, isTouch } from '../hooks/usePopup';
 
 interface CardRowProps {
   card: DeckCard;
@@ -18,33 +20,6 @@ interface CardRowProps {
   compact?: boolean;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  'token-generator': 'Token Generator',
-  'support': 'Support',
-  'both': 'Generator + Support',
-  'other': '',
-};
-
-const CATEGORY_COLORS: Record<string, string> = {
-  'token-generator': '#4caf50',
-  'support': '#ff9800',
-  'both': '#9c27b0',
-  'other': 'transparent',
-};
-
-const TRIGGER_COLORS: Record<string, string> = {
-  'landfall': '#16a34a',
-  'upkeep': '#2563eb',
-  'combat': '#dc2626',
-  'etb': '#d97706',
-  'tap': '#6366f1',
-  'other': '#6b7280',
-};
-
-function isTouchDevice(): boolean {
-  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-}
-
 function getArtCropUri(card: DeckCard): string | undefined {
   const data = card.scryfallData;
   return data.image_uris?.art_crop || data.card_faces?.[0]?.image_uris?.art_crop;
@@ -58,7 +33,6 @@ function getImageUri(card: DeckCard): string | undefined {
 function findTokenArt(tokenDef: TokenDefinition, card: DeckCard): { thumbUrl?: string; popupUrl?: string } {
   const name = tokenDef.name.toLowerCase();
 
-  // For "Copy of X" tokens, use the source card's own art
   if (name.startsWith('copy of ')) {
     const artCrop = card.scryfallData.image_uris?.art_crop || card.scryfallData.card_faces?.[0]?.image_uris?.art_crop;
     const normal = card.scryfallData.image_uris?.normal || card.scryfallData.card_faces?.[0]?.image_uris?.normal;
@@ -75,72 +49,19 @@ function findTokenArt(tokenDef: TokenDefinition, card: DeckCard): { thumbUrl?: s
 }
 
 function TokenThumb({ tokenDef, thumbUrl, popupUrl }: { tokenDef: TokenDefinition; thumbUrl?: string; popupUrl?: string }) {
-  const [show, setShow] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
-  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
-
-  const calcPosition = () => {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const popupW = 160;
-    const popupH = 230;
-    const style: React.CSSProperties = {};
-
-    // Vertical: prefer below, flip above if no room
-    if (rect.bottom + popupH + 6 > window.innerHeight) {
-      style.top = 'auto';
-      style.bottom = '100%';
-      style.marginBottom = '6px';
-    } else {
-      style.top = '100%';
-      style.marginTop = '6px';
-    }
-
-    // Horizontal: center on thumb, but clamp to viewport
-    const thumbCenter = rect.left + rect.width / 2;
-    let leftOffset = thumbCenter - popupW / 2;
-    if (leftOffset < 8) leftOffset = 8;
-    if (leftOffset + popupW > window.innerWidth - 8) leftOffset = window.innerWidth - popupW - 8;
-    // Convert to relative offset from thumb's left
-    style.left = `${leftOffset - rect.left}px`;
-    style.transform = 'none';
-
-    setPopupStyle(style);
-  };
-
-  const handleEnter = () => {
-    calcPosition();
-    setShow(true);
-  };
-
-  const handleTap = useCallback((e: React.MouseEvent) => {
-    if (!isTouchDevice()) return;
-    e.stopPropagation();
-    calcPosition();
-    setShow(prev => !prev);
-  }, []);
-
-  // Close on outside tap
-  useEffect(() => {
-    if (!show || !isTouchDevice()) return;
-    const close = (e: TouchEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setShow(false);
-      }
-    };
-    document.addEventListener('touchstart', close);
-    return () => document.removeEventListener('touchstart', close);
-  }, [show]);
+  const { ref, show, popupStyle, handlers } = usePopup({
+    popupWidth: 160,
+    popupHeight: 230,
+    placement: 'below',
+  });
 
   const label = `${tokenDef.count === -1 ? 'X' : tokenDef.count}× ${tokenDef.power ? `${tokenDef.power}/${tokenDef.toughness} ` : ''}${tokenDef.name}`;
 
   return (
     <span
-      ref={ref}
+      ref={ref as React.RefObject<HTMLSpanElement>}
       className="token-thumb"
-      onMouseEnter={!isTouchDevice() ? handleEnter : undefined}
-      onMouseLeave={!isTouchDevice() ? () => setShow(false) : undefined}
-      onClick={handleTap}
+      {...handlers}
       title={label}
     >
       {thumbUrl ? (
@@ -165,86 +86,44 @@ export const CardRow = memo(function CardRow({
   conditions, onToggleCondition, children,
   compact,
 }: CardRowProps) {
-  const [showImage, setShowImage] = useState(false);
-  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
-  const rowRef = useRef<HTMLDivElement>(null);
   const imageUri = getImageUri(card);
   const artCropUri = getArtCropUri(card);
   const maxQty = card.decklistEntry.quantity;
   const canPlay = inPlayCount < maxQty;
 
-  const calcPopupPosition = () => {
-    if (!rowRef.current) return;
-    const rect = rowRef.current.getBoundingClientRect();
-    const popupH = 350;
-    const popupW = 260; // 250 img + 10 margin
-    const style: React.CSSProperties = {};
+  // Desktop: side popup. Touch: below popup.
+  const desktopPopup = usePopup({ popupWidth: 260, popupHeight: 350, placement: 'side' });
+  const touchPopup = usePopup({ popupWidth: 250, popupHeight: 350, placement: 'below' });
 
-    // Horizontal: prefer right side, fall back to left
-    if (rect.right + popupW > window.innerWidth) {
-      style.left = 'auto';
-      style.right = '100%';
-      style.marginRight = '10px';
-      style.marginLeft = '0';
-    }
+  const handleRowMouseEnter = desktopPopup.handlers.onMouseEnter;
+  const handleRowMouseLeave = desktopPopup.handlers.onMouseLeave;
 
-    // Vertical: clamp so popup stays within viewport
-    let top = rect.top;
-    if (top + popupH > window.innerHeight) {
-      top = window.innerHeight - popupH - 8;
-    }
-    if (top < 8) top = 8;
-    style.top = `${top - rect.top}px`;
-
-    setPopupStyle(style);
-  };
-
-  const handleMouseEnter = () => {
-    if (isTouchDevice()) return;
-    calcPopupPosition();
-    setShowImage(true);
-  };
-
-  const [popupAbove, setPopupAbove] = useState(false);
-
-  const handleTap = useCallback((e: React.MouseEvent) => {
-    if (!isTouchDevice()) return;
+  const handleRowClick = useCallback((e: React.MouseEvent) => {
+    if (!isTouch) return;
     const target = e.target as HTMLElement;
     if (target.closest('button, input, label, .token-thumb')) return;
-    if (rowRef.current) {
-      const rect = rowRef.current.getBoundingClientRect();
-      setPopupAbove(rect.bottom + 350 > window.innerHeight);
-    }
-    setShowImage(prev => !prev);
-  }, []);
+    touchPopup.handlers.onClick(e);
+  }, [touchPopup.handlers]);
 
-  // Close card popup on outside tap
-  useEffect(() => {
-    if (!showImage || !isTouchDevice()) return;
-    const close = (e: TouchEvent) => {
-      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
-        setShowImage(false);
-      }
-    };
-    document.addEventListener('touchstart', close);
-    return () => document.removeEventListener('touchstart', close);
-  }, [showImage]);
+  // Use the desktop ref for the row element (both popups reference the same row)
+  const rowRef = desktopPopup.ref as React.RefObject<HTMLDivElement>;
+
+  // Sync touch popup ref to same element
+  const setRefs = useCallback((el: HTMLDivElement | null) => {
+    (desktopPopup.ref as React.MutableRefObject<HTMLElement | null>).current = el;
+    (touchPopup.ref as React.MutableRefObject<HTMLElement | null>).current = el;
+  }, [desktopPopup.ref, touchPopup.ref]);
 
   return (
     <div
-      ref={rowRef}
+      ref={setRefs}
       className={`card-row category-${card.category}`}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={!isTouchDevice() ? () => setShowImage(false) : undefined}
-      onClick={handleTap}
+      onMouseEnter={handleRowMouseEnter}
+      onMouseLeave={handleRowMouseLeave}
+      onClick={handleRowClick}
     >
       {artCropUri && (
-        <img
-          src={artCropUri}
-          alt=""
-          className="card-thumbnail"
-          loading="lazy"
-        />
+        <img src={artCropUri} alt="" className="card-thumbnail" loading="lazy" />
       )}
       <div className="card-info">
         <span className="card-name">
@@ -349,14 +228,14 @@ export const CardRow = memo(function CardRow({
         )}
       </div>
 
-      {showImage && imageUri && !isTouchDevice() && (
-        <div className="card-image-popup" style={popupStyle}>
+      {desktopPopup.show && imageUri && !isTouch && (
+        <div className="card-image-popup" style={desktopPopup.popupStyle}>
           <img src={imageUri} alt={card.scryfallData.name} />
         </div>
       )}
 
-      {showImage && imageUri && isTouchDevice() && (
-        <div className={`card-image-popup card-popup-touch${popupAbove ? ' popup-above' : ''}`}>
+      {touchPopup.show && imageUri && isTouch && (
+        <div className="card-image-popup" style={touchPopup.popupStyle}>
           <img src={imageUri} alt={card.scryfallData.name} />
         </div>
       )}

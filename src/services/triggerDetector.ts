@@ -1,4 +1,5 @@
 import type { ScryfallCard } from '../types';
+import { getOracleText, splitAbilities } from './cardUtils';
 
 export type TriggerType = 'upkeep' | 'tap' | 'landfall' | 'combat' | 'death' | 'cast' | 'activate' | 'etb' | 'other';
 
@@ -24,18 +25,6 @@ const TRIGGER_PATTERNS: TriggerPattern[] = [
   { regex: /when\b.*enters/i, type: 'etb', label: 'ETB' },
   { regex: /\{T\}/i, type: 'tap', label: 'Tap' },
 ];
-
-function getOracleText(card: ScryfallCard): string {
-  if (card.oracle_text) return card.oracle_text;
-  if (card.card_faces) {
-    return card.card_faces.map(f => f.oracle_text || '').join('\n');
-  }
-  return '';
-}
-
-function splitAbilities(card: ScryfallCard): string[] {
-  return getOracleText(card).split('\n').filter(line => line.trim().length > 0);
-}
 
 const TOKEN_LINE_RE = /create.*token|populate|fabricate|amass|incubate/i;
 

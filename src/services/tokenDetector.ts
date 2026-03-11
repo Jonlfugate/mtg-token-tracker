@@ -1,4 +1,5 @@
 import type { TokenDefinition, ScryfallCard, ScryfallTokenData } from '../types';
+import { getOracleText } from './cardUtils';
 
 const WORD_TO_NUM: Record<string, number> = {
   'a': 1, 'an': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
@@ -15,14 +16,6 @@ const KEYWORDS = [
 const CREATE_TOKEN_REGEX = /[Cc]reates?\s+(.+?\btokens?\b)/g;
 const CONDITION_REGEX = /[Ii]f\s+(.+?),\s+create\s+(.+?\btokens?\b.*?)\s+instead/g;
 const COPY_TOKEN_REGEX = /create\s+a\s+token\s+that'?s\s+a\s+copy\s+of\s+(.+?)(?:\s+instead)?[.,]/gi;
-
-function getOracleText(card: ScryfallCard): string {
-  if (card.oracle_text) return card.oracle_text;
-  if (card.card_faces) {
-    return card.card_faces.map(f => f.oracle_text || '').join('\n');
-  }
-  return '';
-}
 
 function parseCount(text: string): number {
   const lower = text.toLowerCase().trim();

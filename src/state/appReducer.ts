@@ -1,52 +1,12 @@
-import type { AppState, BattlefieldCard, DeckCard, HistoryEntry, StandaloneToken } from '../types';
+import type { AppState, BattlefieldCard, DeckCard, HistoryEntry, StandaloneToken, TokenCalculationResult } from '../types';
 import { calculateTokens } from '../services/tokenCalculator';
+import { isInstantOrSorcery, isTokenGenerator, isCopyToken } from '../services/cardUtils';
 
-function isInstantOrSorcery(card: DeckCard): boolean {
-  const type = card.scryfallData.type_line.toLowerCase();
-  return type.includes('instant') || type.includes('sorcery');
-}
-
-function isTokenGenerator(card: DeckCard): boolean {
-  return card.category === 'token-generator' || card.category === 'both';
-}
-
-function hasCondition(card: DeckCard): boolean {
-  return card.tokens.some(t => t.isConditional);
-}
-
-// Filter tokens based on per-token conditions:
-// - For tokens with isConditional: only include if that token's condition is met
-// - For non-conditional tokens: exclude if a replacement ("instead") token is active
-function getActiveTokens(card: DeckCard, conditionsMet: Record<string, boolean>): DeckCard {
-  if (!hasCondition(card)) return card;
-
-  // Check if any "instead" replacement is active
-  const hasActiveReplacement = card.tokens.some(t => t.isReplacement && conditionsMet[t.name]);
-
-  const filteredTokens = card.tokens.filter(t => {
-    if (t.isConditional) {
-      // Include conditional tokens only if their specific condition is toggled on
-      return conditionsMet[t.name] ?? false;
-    }
-    // Non-conditional (default) tokens: exclude if a replacement is active
-    // (e.g., Court of Grace's Spirit is replaced by Angel when monarch)
-    if (hasActiveReplacement) {
-      return false;
-    }
-    return true;
-  });
-
-  return { ...card, tokens: filteredTokens };
-}
-
-function isCopyToken(tokenDef: { name: string }): boolean {
-  return tokenDef.name.toLowerCase().startsWith('copy of ');
-}
+// --- Helpers ---
 
 const MAX_UNDO = 50;
 
 function pushUndo(state: AppState): AppState[] {
-  // Save state without undoStack to avoid nested stacks
   const snapshot = { ...state, undoStack: [] };
   const stack = [...state.undoStack, snapshot];
   if (stack.length > MAX_UNDO) stack.shift();
@@ -56,6 +16,100 @@ function pushUndo(state: AppState): AppState[] {
 function addHistory(state: AppState, label: string): HistoryEntry[] {
   return [...state.history, { label, turn: state.currentTurn, timestamp: Date.now() }];
 }
+
+/** Get all support/both cards currently on the battlefield */
+function getSupportCards(state: AppState): DeckCard[] {
+  return state.battlefield
+    .map(bc => state.deckCards[bc.deckCardIndex])
+    .filter(c => c.category === 'support' || c.category === 'both');
+}
+
+/** Check if a card has any conditional tokens */
+function hasCondition(card: DeckCard): boolean {
+  return card.tokens.some(t => t.isConditional);
+}
+
+/**
+ * Filter tokens based on per-token conditions:
+ * - For tokens with isConditional: only include if that token's condition is met
+ * - For non-conditional tokens: exclude if a replacement ("instead") token is active
+ */
+function getActiveTokens(card: DeckCard, conditionsMet: Record<string, boolean>): DeckCard {
+  if (!hasCondition(card)) return card;
+
+  const hasActiveReplacement = card.tokens.some(t => t.isReplacement && conditionsMet[t.name]);
+
+  const filteredTokens = card.tokens.filter(t => {
+    if (t.isConditional) {
+      return conditionsMet[t.name] ?? false;
+    }
+    if (hasActiveReplacement) {
+      return false;
+    }
+    return true;
+  });
+
+  return { ...card, tokens: filteredTokens };
+}
+
+/**
+ * Resolve self-copies countMode by calculating token count from battlefield state.
+ * Also applies condition filtering.
+ */
+function resolveActiveCard(
+  card: DeckCard,
+  conditionsMet: Record<string, boolean>,
+  battlefield: BattlefieldCard[],
+  deckCardIndex: number,
+): DeckCard {
+  let activeCard = getActiveTokens(card, conditionsMet);
+
+  if (activeCard.tokens.some(t => t.countMode === 'self-copies')) {
+    const inPlay = battlefield.filter(b => b.deckCardIndex === deckCardIndex).length;
+    activeCard = {
+      ...activeCard,
+      tokens: activeCard.tokens.map(t =>
+        t.countMode === 'self-copies' ? { ...t, count: Math.max(0, inPlay - 1) } : t
+      ),
+    };
+  }
+
+  return activeCard;
+}
+
+/** Check if tokens should be created immediately when a card is played */
+function shouldTriggerOnPlay(card: DeckCard): boolean {
+  if (!isTokenGenerator(card)) return false;
+  // Modal cards (all tokens conditional) skip auto-create so the player can choose
+  if (card.tokens.length > 0 && card.tokens.every(t => t.isConditional)) return false;
+  return (
+    isInstantOrSorcery(card) ||
+    card.triggerInfo?.type === 'etb' ||
+    card.triggerInfo?.alsoEtb === true ||
+    !card.triggerInfo // no detected trigger = one-shot effect
+  );
+}
+
+/** Convert TokenCalculationResults into StandaloneTokens */
+function createStandaloneTokens(
+  results: TokenCalculationResult[],
+  sourceName: string,
+  deckCardIndex: number,
+  currentTurn: number,
+): StandaloneToken[] {
+  return results.map(calc => ({
+    id: crypto.randomUUID(),
+    tokenDef: calc.baseTokens,
+    tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
+    finalCount: calc.finalCount,
+    breakdown: calc.breakdown,
+    sourceName,
+    copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
+    createdOnTurn: currentTurn,
+  }));
+}
+
+// --- Action types ---
 
 export type AppAction =
   | { type: 'SET_RAW_DECKLIST'; payload: string }
@@ -94,6 +148,8 @@ export const initialState: AppState = {
   undoStack: [],
 };
 
+// --- Reducer ---
+
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SET_RAW_DECKLIST':
@@ -113,10 +169,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case 'FETCH_PROGRESS':
-      return {
-        ...state,
-        fetchProgress: action.payload,
-      };
+      return { ...state, fetchProgress: action.payload };
 
     case 'IMPORT_COMPLETE':
       return {
@@ -127,11 +180,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case 'IMPORT_ERROR':
-      return {
-        ...state,
-        importStatus: 'error',
-        error: action.payload,
-      };
+      return { ...state, importStatus: 'error', error: action.payload };
 
     case 'PLAY_CARD': {
       const { deckCardIndex, xValue, quantity = 1 } = action.payload;
@@ -142,77 +191,34 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const cardName = deckCard.scryfallData.name;
       const histLabel = quantity > 1 ? `Played ${quantity}x ${cardName}` : `Played ${cardName}`;
 
-      // Determine if tokens should be created immediately on play:
-      // - Instants/sorceries always resolve immediately
-      // - ETB permanents trigger on entering the battlefield
-      // - All other permanents wait for their trigger (landfall, upkeep, tap, etc.)
-      // - Modal cards (all tokens conditional) skip auto-create so the player can choose
-      const allTokensConditional = deckCard.tokens.length > 0 && deckCard.tokens.every(t => t.isConditional);
-      const shouldCreateTokensNow = isTokenGenerator(deckCard) && !allTokensConditional && (
-        isInstantOrSorcery(deckCard) ||
-        deckCard.triggerInfo?.type === 'etb' ||
-        deckCard.triggerInfo?.alsoEtb ||
-        !deckCard.triggerInfo // no detected trigger = one-shot effect
-      );
-
       let newStandaloneTokens = state.standaloneTokens;
-      if (shouldCreateTokensNow) {
-        const supportCards = state.battlefield
-          .map(bc => state.deckCards[bc.deckCardIndex])
-          .filter(c => c.category === 'support' || c.category === 'both');
-
-        // Handle self-copies countMode: auto-calculate from battlefield state
-        // For simultaneous entry of N copies, each sees (alreadyInPlay + N - 1) others
+      if (shouldTriggerOnPlay(deckCard)) {
+        const supportCards = getSupportCards(state);
         const hasSelfCopies = deckCard.tokens.some(t => t.countMode === 'self-copies');
+
         if (hasSelfCopies) {
           const alreadyInPlay = state.battlefield.filter(b => b.deckCardIndex === deckCardIndex).length;
-          // Each copy entering sees: existing copies + other copies entering simultaneously
           const eachSees = alreadyInPlay + quantity - 1;
-          // Create a modified card with the calculated count
           const modifiedCard = {
             ...deckCard,
             tokens: deckCard.tokens.map(t =>
               t.countMode === 'self-copies' ? { ...t, count: eachSees } : t
             ),
           };
-          // Each entering copy triggers separately
           for (let i = 0; i < quantity; i++) {
             const results = calculateTokens(modifiedCard, supportCards, xValue ?? 1);
-            const newTokens: StandaloneToken[] = results.map(calc => ({
-              id: crypto.randomUUID(),
-              tokenDef: calc.baseTokens,
-              tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
-              finalCount: calc.finalCount,
-              breakdown: calc.breakdown,
-              sourceName: deckCard.scryfallData.name,
-              copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
-              createdOnTurn: state.currentTurn,
-            }));
+            const newTokens = createStandaloneTokens(results, cardName, deckCardIndex, state.currentTurn);
             newStandaloneTokens = [...newStandaloneTokens, ...newTokens];
           }
         } else {
           const results = calculateTokens(deckCard, supportCards, xValue ?? 1);
-          const newTokens: StandaloneToken[] = results.map(calc => ({
-            id: crypto.randomUUID(),
-            tokenDef: calc.baseTokens,
-            tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
-            finalCount: calc.finalCount,
-            breakdown: calc.breakdown,
-            sourceName: deckCard.scryfallData.name,
-            copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
-            createdOnTurn: state.currentTurn,
-          }));
+          const newTokens = createStandaloneTokens(results, cardName, deckCardIndex, state.currentTurn);
           newStandaloneTokens = [...state.standaloneTokens, ...newTokens];
         }
       }
 
-      // Check if this card triggers populate on play (ETB or instant/sorcery)
-      const shouldPopulateNow = deckCard.hasPopulate && (
-        isInstantOrSorcery(deckCard) ||
-        deckCard.triggerInfo?.type === 'etb' ||
-        deckCard.triggerInfo?.alsoEtb ||
-        !deckCard.triggerInfo
-      );
+      // Check if this card triggers populate on play
+      const shouldPopulateNow = deckCard.hasPopulate && shouldTriggerOnPlay(deckCard);
       const populateAdd = shouldPopulateNow ? 1 : 0;
 
       // Instants/sorceries don't stay on the battlefield
@@ -229,16 +235,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       // Permanents go to the battlefield
       const inPlayCount = state.battlefield.filter(b => b.deckCardIndex === deckCardIndex).length;
       if (inPlayCount + quantity > deckCard.decklistEntry.quantity) {
-        return { ...state, standaloneTokens: newStandaloneTokens, pendingPopulate: state.pendingPopulate + populateAdd, undoStack, history: addHistory(state, histLabel) };
+        return {
+          ...state,
+          standaloneTokens: newStandaloneTokens,
+          pendingPopulate: state.pendingPopulate + populateAdd,
+          undoStack,
+          history: addHistory(state, histLabel),
+        };
       }
 
       const newCards: BattlefieldCard[] = [];
       for (let i = 0; i < quantity; i++) {
-        newCards.push({
-          instanceId: crypto.randomUUID(),
-          deckCardIndex,
-          xValue,
-        });
+        newCards.push({ instanceId: crypto.randomUUID(), deckCardIndex, xValue });
       }
 
       return {
@@ -257,39 +265,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       if (!deckCard || !isTokenGenerator(deckCard)) return state;
 
       const undoStack = pushUndo(state);
-
-      // Find the battlefield instance to check its conditionMet state
       const bc = state.battlefield.find(b => b.deckCardIndex === deckCardIndex);
-      const conditionMet = bc?.conditionsMet ?? {};
-      let activeCard = getActiveTokens(deckCard, conditionMet);
-
-      // Handle self-copies countMode: count from battlefield state
-      const hasSelfCopies = activeCard.tokens.some(t => t.countMode === 'self-copies');
-      if (hasSelfCopies) {
-        const inPlay = state.battlefield.filter(b => b.deckCardIndex === deckCardIndex).length;
-        activeCard = {
-          ...activeCard,
-          tokens: activeCard.tokens.map(t =>
-            t.countMode === 'self-copies' ? { ...t, count: inPlay - 1 } : t
-          ),
-        };
-      }
-
-      const supportCards = state.battlefield
-        .map(b => state.deckCards[b.deckCardIndex])
-        .filter(c => c.category === 'support' || c.category === 'both');
-
+      const activeCard = resolveActiveCard(deckCard, bc?.conditionsMet ?? {}, state.battlefield, deckCardIndex);
+      const supportCards = getSupportCards(state);
       const results = calculateTokens(activeCard, supportCards, xValue ?? 1);
-      const newTokens: StandaloneToken[] = results.map(calc => ({
-        id: crypto.randomUUID(),
-        tokenDef: calc.baseTokens,
-        tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
-        finalCount: calc.finalCount,
-        breakdown: calc.breakdown,
-        sourceName: deckCard.scryfallData.name,
-        copyOfDeckIndex: isCopyToken(calc.baseTokens) ? deckCardIndex : undefined,
-        createdOnTurn: state.currentTurn,
-      }));
+      const newTokens = createStandaloneTokens(results, deckCard.scryfallData.name, deckCardIndex, state.currentTurn);
 
       return {
         ...state,
@@ -302,13 +282,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'TRIGGER_ALL': {
       const { triggerTypes } = action.payload;
-
       const undoStack = pushUndo(state);
-
-      const supportCards = state.battlefield
-        .map(bc => state.deckCards[bc.deckCardIndex])
-        .filter(c => c.category === 'support' || c.category === 'both');
-
+      const supportCards = getSupportCards(state);
       const allNewTokens: StandaloneToken[] = [];
       const xTriggerQueue: number[] = [];
 
@@ -317,25 +292,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         const card = state.deckCards[bc.deckCardIndex];
         if (!isTokenGenerator(card) || !card.triggerInfo || !triggerTypes.includes(card.triggerInfo.type)) continue;
 
-        const activeCard = getActiveTokens(card, bc.conditionsMet ?? {});
+        const activeCard = resolveActiveCard(card, bc.conditionsMet ?? {}, state.battlefield, bc.deckCardIndex);
         if (activeCard.tokens.some(t => t.count === -1)) {
           xTriggerQueue.push(bc.deckCardIndex);
           continue;
         }
 
         const results = calculateTokens(activeCard, supportCards);
-        for (const calc of results) {
-          allNewTokens.push({
-            id: crypto.randomUUID(),
-            tokenDef: calc.baseTokens,
-            tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
-            finalCount: calc.finalCount,
-            breakdown: calc.breakdown,
-            sourceName: card.scryfallData.name,
-            copyOfDeckIndex: isCopyToken(calc.baseTokens) ? bc.deckCardIndex : undefined,
-            createdOnTurn: state.currentTurn,
-          });
-        }
+        allNewTokens.push(...createStandaloneTokens(results, card.scryfallData.name, bc.deckCardIndex, state.currentTurn));
       }
 
       // Also trigger copy tokens that are copies of cards with matching trigger types
@@ -345,28 +309,21 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         if (!originalCard || !originalCard.triggerInfo || !triggerTypes.includes(originalCard.triggerInfo.type)) continue;
 
         const bc = state.battlefield.find(b => b.deckCardIndex === token.copyOfDeckIndex);
-        const conditionMet = bc?.conditionsMet ?? {};
-        const activeCard = getActiveTokens(originalCard, conditionMet);
+        const activeCard = resolveActiveCard(originalCard, bc?.conditionsMet ?? {}, state.battlefield, token.copyOfDeckIndex);
         if (activeCard.tokens.some(t => t.count === -1)) continue;
 
         for (let i = 0; i < token.finalCount; i++) {
           const results = calculateTokens(activeCard, supportCards);
-          for (const calc of results) {
-            allNewTokens.push({
-              id: crypto.randomUUID(),
-              tokenDef: calc.baseTokens,
-              tokenArt: isCopyToken(calc.baseTokens) ? undefined : calc.tokenArt,
-              finalCount: calc.finalCount,
-              breakdown: calc.breakdown,
-              sourceName: `Copy of ${originalCard.scryfallData.name}`,
-              copyOfDeckIndex: isCopyToken(calc.baseTokens) ? token.copyOfDeckIndex : undefined,
-              createdOnTurn: state.currentTurn,
-            });
-          }
+          allNewTokens.push(...createStandaloneTokens(
+            results,
+            `Copy of ${originalCard.scryfallData.name}`,
+            token.copyOfDeckIndex,
+            state.currentTurn,
+          ));
         }
       }
 
-      // Count populate triggers from battlefield cards
+      // Count populate triggers
       const populateCount = state.battlefield.filter(bc => {
         const card = state.deckCards[bc.deckCardIndex];
         return card.hasPopulate && card.triggerInfo && triggerTypes.includes(card.triggerInfo.type);
@@ -441,22 +398,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case 'RESOLVE_POPULATE':
-      return {
-        ...state,
-        pendingPopulate: Math.max(0, state.pendingPopulate - 1),
-      };
+      return { ...state, pendingPopulate: Math.max(0, state.pendingPopulate - 1) };
 
     case 'CANCEL_POPULATE':
-      return {
-        ...state,
-        pendingPopulate: 0,
-      };
+      return { ...state, pendingPopulate: 0 };
 
     case 'SHIFT_X_TRIGGER':
-      return {
-        ...state,
-        pendingXTriggers: state.pendingXTriggers.slice(1),
-      };
+      return { ...state, pendingXTriggers: state.pendingXTriggers.slice(1) };
 
     case 'CLEAR_ALL_TOKENS': {
       if (state.standaloneTokens.length === 0) return state;

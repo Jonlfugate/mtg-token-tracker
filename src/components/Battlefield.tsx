@@ -1,35 +1,16 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../state/AppContext';
 import { CardRow } from './CardRow';
 import { XValueModal } from './XValueModal';
 import type { StandaloneToken, TokenDefinition } from '../types';
-
-const COLOR_BORDER_MAP: Record<string, string> = {
-  white: '#f5f0d0',
-  blue: '#0e67ab',
-  black: '#6b6b6b',
-  red: '#d32029',
-  green: '#00733e',
-};
+import { COLOR_BORDER_MAP, TRIGGER_GROUP_ORDER, TRIGGER_GROUP_LABELS } from '../constants';
 
 function getTokenBorderColor(tokenDef: TokenDefinition): string {
   const colors = tokenDef.colors.filter(c => c !== 'colorless');
-  if (colors.length === 0) return '#6b7280'; // grey for colorless
-  if (colors.length > 1) return '#c9a92c'; // gold for multicolor
+  if (colors.length === 0) return '#6b7280';
+  if (colors.length > 1) return '#c9a92c';
   return COLOR_BORDER_MAP[colors[0]] ?? '#6b7280';
 }
-
-const TRIGGER_GROUP_ORDER = ['etb', 'landfall', 'upkeep', 'combat', 'tap', 'other'];
-const TRIGGER_GROUP_LABELS: Record<string, string> = {
-  etb: 'ETB',
-  landfall: 'Landfall',
-  upkeep: 'Upkeep',
-  combat: 'Combat',
-  tap: 'Tap',
-  other: 'Other Triggers',
-  support: 'Support',
-  none: 'No Trigger',
-};
 
 export function Battlefield() {
   const { state, dispatch } = useAppContext();
@@ -197,12 +178,14 @@ export function Battlefield() {
       }
     }
 
-    const result = Array.from(grouped.values());
+    return Array.from(grouped.values());
+  }, [standaloneTokens, state.currentTurn]);
 
-    // Detect count changes for animation
+  // Animation detection — separated from useMemo to avoid side effects in pure computation
+  useEffect(() => {
     const newCounts = new Map<string, number>();
     const toAnimate = new Set<string>();
-    for (const g of result) {
+    for (const g of groupedTokens) {
       const key = g.ids[0];
       newCounts.set(key, g.totalCount);
       const prev = prevTokenCountsRef.current.get(key);
@@ -214,11 +197,10 @@ export function Battlefield() {
 
     if (toAnimate.size > 0) {
       setAnimatingIds(toAnimate);
-      setTimeout(() => setAnimatingIds(new Set()), 500);
+      const timer = setTimeout(() => setAnimatingIds(new Set()), 500);
+      return () => clearTimeout(timer);
     }
-
-    return result;
-  }, [standaloneTokens, state.currentTurn]);
+  }, [groupedTokens]);
 
   if (state.importStatus !== 'done') return null;
 

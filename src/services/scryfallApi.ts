@@ -1,4 +1,5 @@
 import type { ScryfallCard, TokenArt, ScryfallTokenData } from '../types';
+import { getCachedCard, setCachedCard, getCachedToken, setCachedToken } from './scryfallCache';
 
 const BASE_URL = 'https://api.scryfall.com';
 const REQUEST_DELAY_MS = 80;
@@ -96,25 +97,37 @@ export async function fetchAllCards(
   const results = new Map<string, { card: ScryfallCard; tokenArt: TokenArt[]; tokenData: ScryfallTokenData[] }>();
   const uniqueNames = [...new Set(cardNames)];
 
-  // Phase 1: Fetch all cards
+  // Phase 0: Check cache for all cards
+  const uncachedNames: string[] = [];
+  for (const name of uniqueNames) {
+    const cached = await getCachedCard(name);
+    if (cached) {
+      results.set(name, { card: cached.card, tokenArt: cached.tokenArt, tokenData: cached.tokenData });
+    } else {
+      uncachedNames.push(name);
+    }
+  }
+
+  const cachedCount = uniqueNames.length - uncachedNames.length;
+
+  // Phase 1: Fetch uncached cards from Scryfall
   const cardMap = new Map<string, ScryfallCard>();
-  for (let i = 0; i < uniqueNames.length; i++) {
-    const name = uniqueNames[i];
+  for (let i = 0; i < uncachedNames.length; i++) {
+    const name = uncachedNames[i];
     try {
       const card = await fetchCard(name);
       cardMap.set(name, card);
     } catch (err) {
       console.warn(`Failed to fetch "${name}":`, err);
     }
-    onProgress(i + 1, uniqueNames.length);
-    if (i < uniqueNames.length - 1) {
+    onProgress(cachedCount + i + 1, uniqueNames.length);
+    if (i < uncachedNames.length - 1) {
       await delay(REQUEST_DELAY_MS);
     }
   }
 
-  // Phase 2: Fetch token art for cards that have related tokens
-  // Collect all unique token URIs first
-  const tokenUriMap = new Map<string, string>(); // uri -> token name
+  // Phase 2: Fetch token art for uncached cards
+  const tokenUriMap = new Map<string, string>();
   for (const card of cardMap.values()) {
     if (card.all_parts) {
       for (const part of card.all_parts) {
@@ -125,19 +138,25 @@ export async function fetchAllCards(
     }
   }
 
-  // Fetch all token cards (art + data)
   const tokenCache = new Map<string, FetchedTokenResult>();
   const tokenUris = Array.from(tokenUriMap.keys());
   for (let i = 0; i < tokenUris.length; i++) {
     const uri = tokenUris[i];
-    const result = await fetchTokenCard(uri);
-    tokenCache.set(uri, result);
-    if (i < tokenUris.length - 1) {
-      await delay(REQUEST_DELAY_MS);
+    // Check IndexedDB cache first
+    const cached = await getCachedToken(uri);
+    if (cached) {
+      tokenCache.set(uri, { art: cached.art, data: cached.data });
+    } else {
+      const result = await fetchTokenCard(uri);
+      tokenCache.set(uri, result);
+      await setCachedToken(uri, result.art, result.data);
+      if (i < tokenUris.length - 1) {
+        await delay(REQUEST_DELAY_MS);
+      }
     }
   }
 
-  // Phase 3: Assemble results
+  // Phase 3: Assemble results for uncached cards and write to cache
   for (const [name, card] of cardMap.entries()) {
     const tokenArt: TokenArt[] = [];
     const tokenData: ScryfallTokenData[] = [];
@@ -151,7 +170,12 @@ export async function fetchAllCards(
       }
     }
     results.set(name, { card, tokenArt, tokenData });
+    // Write to IndexedDB cache for future use
+    await setCachedCard(name, card, tokenArt, tokenData);
   }
+
+  // Report complete
+  onProgress(uniqueNames.length, uniqueNames.length);
 
   return results;
 }
