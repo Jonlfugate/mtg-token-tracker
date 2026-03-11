@@ -13,6 +13,8 @@ const SUPPORT_PATTERNS: SupportPattern[] = [
   { regex: /twice\s+that\s+many.*token/i, type: 'multiplier', factor: 2 },
   // "double the number of those tokens"
   { regex: /double\s+the\s+number.*token/i, type: 'multiplier', factor: 2 },
+  // Adrix and Nev: "that token is created twice instead" / "those tokens are created twice instead"
+  { regex: /tokens?\s+(?:is|are)\s+created\s+twice\s+instead/i, type: 'multiplier', factor: 2 },
   // "three times that many" (tokens)
   { regex: /three\s+times\s+that\s+many.*token/i, type: 'multiplier', factor: 3 },
   // "that many plus one" (Mondrak-style — near tokens)
@@ -34,30 +36,49 @@ const SUPPORT_PATTERNS: SupportPattern[] = [
   { regex: /instead\s+create\s+one\s+of\s+each/i, type: 'companion', factor: 1 },
 ];
 
-export function detectSupport(card: ScryfallCard): SupportEffect | undefined {
+/** Detect condition scope — what token types does this effect apply to? */
+function detectCondition(ability: string): string | undefined {
+  const lower = ability.toLowerCase();
+  // Check if the effect is restricted to creature tokens only
+  // Look for "creature token" without other token type mentions nearby
+  if (/creature\s+tokens?/i.test(ability)) {
+    // If the ability mentions other token types too, it's not creature-only
+    const withoutCreatureToken = ability.replace(/creature\s+tokens?/gi, '');
+    if (!/\b(?:artifact|enchantment|treasure|food|clue|blood)\s+tokens?/i.test(withoutCreatureToken)) {
+      return 'creature tokens';
+    }
+  }
+  return undefined;
+}
+
+export function detectSupport(card: ScryfallCard): SupportEffect[] {
   const oracleText = getOracleText(card);
   const abilities = oracleText.split('\n').filter(line => line.trim().length > 0);
+  const effects: SupportEffect[] = [];
+  const seen = new Set<string>();
 
   // Check each ability line independently
   for (const ability of abilities) {
     for (const pattern of SUPPORT_PATTERNS) {
       const match = ability.match(pattern.regex);
       if (match) {
-        // Try to detect condition (creature tokens only, etc.)
-        let condition: string | undefined;
-        if (/creature\s+token/i.test(ability) && !/token/i.test(ability.replace(/creature\s+token/gi, ''))) {
-          condition = 'creature tokens';
+        const condition = detectCondition(ability);
+        const key = `${pattern.type}-${pattern.factor}-${condition || 'all'}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          effects.push({
+            type: pattern.type,
+            factor: pattern.factor,
+            condition,
+            rawText: match[0],
+          });
         }
-
-        return {
-          type: pattern.type,
-          factor: pattern.factor,
-          condition,
-          rawText: match[0],
-        };
+        // Don't break — same ability line could match multiple patterns
+        // But skip less-specific patterns that would double-match
+        break;
       }
     }
   }
 
-  return undefined;
+  return effects;
 }

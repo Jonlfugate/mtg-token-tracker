@@ -29,19 +29,43 @@ function hasCondition(card: DeckCard): boolean {
   return card.tokens.some(t => t.isConditional);
 }
 
+/** Get the toggle key for a conditional token */
+function getConditionKey(t: { conditionKey?: string; name: string }): string {
+  return t.conditionKey || t.name;
+}
+
 /**
  * Filter tokens based on per-token conditions:
  * - For tokens with isConditional: only include if that token's condition is met
  * - For non-conditional tokens: exclude if a replacement ("instead") token is active
+ * - For modal/activated-choice: only the last-toggled option is active (mutual exclusivity)
  */
 function getActiveTokens(card: DeckCard, conditionsMet: Record<string, boolean>): DeckCard {
   if (!hasCondition(card)) return card;
 
-  const hasActiveReplacement = card.tokens.some(t => t.isReplacement && conditionsMet[t.name]);
+  const hasActiveReplacement = card.tokens.some(t => t.isReplacement && conditionsMet[getConditionKey(t)]);
+
+  // For mutual-exclusivity types (modal, activated-choice), only allow one active at a time.
+  // If multiple are toggled on, keep only the last one found.
+  const exclusiveTypes = new Set(['modal', 'activated-choice']);
+  const activeExclusiveKey = (() => {
+    const exclusiveTokens = card.tokens.filter(t => t.conditionType && exclusiveTypes.has(t.conditionType));
+    if (exclusiveTokens.length <= 1) return null; // no mutual exclusivity needed
+    const active = exclusiveTokens.filter(t => conditionsMet[getConditionKey(t)]);
+    if (active.length <= 1) return null; // 0 or 1 active, no conflict
+    // Multiple active — keep only the last one
+    return getConditionKey(active[active.length - 1]);
+  })();
 
   const filteredTokens = card.tokens.filter(t => {
     if (t.isConditional) {
-      return conditionsMet[t.name] ?? false;
+      const key = getConditionKey(t);
+      const isActive = conditionsMet[key] ?? false;
+      // If this is a mutual-exclusivity type and another was selected, deactivate
+      if (activeExclusiveKey && t.conditionType && exclusiveTypes.has(t.conditionType) && key !== activeExclusiveKey) {
+        return false;
+      }
+      return isActive;
     }
     if (hasActiveReplacement) {
       return false;
@@ -96,7 +120,7 @@ function shouldTriggerOnPlay(card: DeckCard): boolean {
     isInstantOrSorcery(card) ||
     card.triggerInfo?.type === 'etb' ||
     card.triggerInfo?.alsoEtb === true ||
-    (!card.triggerInfo && !card.supportEffect) // no trigger + no support = one-shot effect
+    (!card.triggerInfo && card.supportEffects.length === 0) // no trigger + no support = one-shot effect
   );
 }
 
@@ -126,7 +150,8 @@ function createCompanionTokens(
   // Non-companion support cards for multiplier calculations
   const supportCards = state.battlefield
     .map(b => state.deckCards[b.deckCardIndex])
-    .filter(c => (c.category === 'support' || c.category === 'both') && c.supportEffect?.type !== 'companion');
+    .filter(c => (c.category === 'support' || c.category === 'both')
+      && !c.supportEffects.some(e => e.type === 'companion'));
 
   // Separate Manufactor-type and Chatterfang-type companions
   const manufactors: BattlefieldCard[] = [];
@@ -134,7 +159,7 @@ function createCompanionTokens(
 
   for (const bc of state.battlefield) {
     const card = state.deckCards[bc.deckCardIndex];
-    if (!card.supportEffect || card.supportEffect.type !== 'companion') continue;
+    if (!card.supportEffects.some(e => e.type === 'companion')) continue;
     if (bc.deckCardIndex === sourceCardIndex) continue;
 
     const oracleText = card.scryfallData.oracle_text?.toLowerCase() ?? '';

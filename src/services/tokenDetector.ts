@@ -10,12 +10,12 @@ const WORD_TO_NUM: Record<string, number> = {
 const KEYWORDS = [
   'flying', 'haste', 'trample', 'vigilance', 'lifelink', 'deathtouch',
   'first strike', 'double strike', 'menace', 'reach', 'hexproof',
-  'indestructible', 'defender',
+  'indestructible', 'defender', 'decayed',
 ];
 
 const CREATE_TOKEN_REGEX = /[Cc]reates?\s+(.+?\btokens?\b)/g;
 const CONDITION_REGEX = /[Ii]f\s+(.+?),\s+create\s+(.+?\btokens?\b.*?)\s+instead/g;
-const COPY_TOKEN_REGEX = /create\s+a\s+token\s+that'?s\s+a\s+copy\s+of\s+(.+?)(?:\s+instead)?[.,]/gi;
+const COPY_TOKEN_REGEX = /create\s+a\s+token\s+that(?:'s|\s+is)\s+a\s+copy\s+of\s+(.+?)(?:\s+instead)?(?:[.,]|$)/gi;
 
 function parseCount(text: string): number {
   const lower = text.toLowerCase().trim();
@@ -29,17 +29,29 @@ function parseCount(text: string): number {
 
 function parseCondition(conditionText: string): string {
   const lower = conditionText.toLowerCase().trim();
-  if (lower.includes('six or more lands')) return '6+ lands';
-  if (lower.includes('seven or more lands')) return '7+ lands';
-  if (lower.includes('five or more lands')) return '5+ lands';
-  if (lower.includes('ten or more')) return '10+ creatures';
+
+  // Numeric threshold patterns: "N or more [things]"
+  const thresholdMatch = lower.match(/(\w+)\s+or\s+more\s+(\w+)/);
+  if (thresholdMatch) {
+    const numWord = thresholdMatch[1];
+    const thing = thresholdMatch[2];
+    const num = WORD_TO_NUM[numWord] ?? parseInt(numWord, 10);
+    if (!isNaN(num) && num > 0) return `${num}+ ${thing}`;
+  }
+
   if (lower.includes("city's blessing")) return "City's blessing";
-  if (lower.includes('gained life')) return 'Gained life';
+  if (lower.includes('gained life') || lower.includes("you've gained")) return 'Gained life';
   if (lower.includes('dealt damage')) return 'Dealt damage';
-  if (lower.includes('cast a spell')) return 'Cast a spell';
+  if (lower.includes('cast a spell') || lower.includes("you've cast")) return 'Cast a spell';
   if (lower.includes('attacked')) return 'Attacked';
+  if (lower.includes('no snakes')) return 'No Snakes';
+  if (/control no (\w+)/i.test(lower)) {
+    const m = lower.match(/control no (\w+)/i);
+    if (m) return `No ${m[1].charAt(0).toUpperCase() + m[1].slice(1)}`;
+  }
+
   const cleaned = conditionText.trim().replace(/^you\s+/i, '').replace(/\s+/g, ' ');
-  if (cleaned.length > 30) return cleaned.slice(0, 27) + '...';
+  if (cleaned.length > 40) return cleaned.slice(0, 37) + '...';
   return cleaned;
 }
 
@@ -186,9 +198,12 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
   const abilities = oracleText.split('\n').filter(line => line.trim().length > 0);
   const tokens: TokenDefinition[] = [];
   const seen = new Set<string>();
+  let conditionCounter = 0;
 
   // Detect if this card has a modal "choose one" pattern
-  const isModal = /choose\s+one\s*(?:—|:|\.| or\s+both| or\s+more| that\s+hasn)/i.test(oracleText);
+  // Require the "—" delimiter to avoid false positives like "choose one at random"
+  const isModal = /choose\s+one\s*(?:—|:)\s/i.test(oracleText)
+    || /choose\s+one\s+or\s+(?:both|more)\s*(?:—|:)/i.test(oracleText);
 
   // Detect if this card has multiple activated abilities that create tokens
   // (e.g., Rhys the Redeemed: two different {T} abilities)
@@ -222,8 +237,10 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
             types: ['creature'],
             keywords: [],
             rawText: ability.trim(),
-            isConditional: true,
+            conditionKey: `${card.name}-double-tokens`,
             condition: 'Double all creature tokens',
+            conditionType: 'activated-choice',
+            isConditional: true,
             countMode: 'double-tokens',
           });
         }
@@ -246,7 +263,9 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
         types: ['creature'],
         keywords: [],
         rawText: copyMatch[0].trim(),
+        conditionKey: condition ? `${card.name}-copy-${conditionCounter++}` : undefined,
         condition,
+        conditionType: condition ? 'replacement' : undefined,
         isConditional: !!condition,
         isReplacement: !!condition, // "instead" — replaces default token
       };
@@ -278,7 +297,9 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
         parsed = parseTokenSnippetFallback(snippet);
       }
       if (parsed) {
+        parsed.conditionKey = `${card.name}-cond-${conditionCounter++}`;
         parsed.condition = condition;
+        parsed.conditionType = 'replacement';
         parsed.isConditional = true;
         parsed.isReplacement = true; // "instead" — replaces default token
         const key = `${parsed.name}-${parsed.power}/${parsed.toughness}-cond`;
@@ -314,14 +335,25 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
         parsed = parseTokenSnippetFallback(snippet);
       }
       if (parsed) {
-        // Check for variable count ("for each", "equal to") — only within same clause
-        const sameClause = ability.substring(matchEnd).split(/[.;]/)[0].toLowerCase();
-        if (/for each\b/.test(sameClause) || /equal to\b/.test(sameClause)) {
+        // Pick up keywords from "with X" clause after "token" (not captured by regex)
+        const afterToken = ability.substring(matchEnd).toLowerCase();
+        const withMatch = afterToken.match(/\bwith\s+(.+?)(?:[.,;]|$)/);
+        if (withMatch) {
+          const extraKeywords = KEYWORDS.filter(k => withMatch[1].includes(k));
+          for (const kw of extraKeywords) {
+            if (!parsed.keywords.includes(kw)) parsed.keywords.push(kw);
+          }
+        }
+
+        // Check for variable count ("for each", "equal to") — look at full ability clause
+        const afterMatch = ability.substring(matchEnd).split(/[.;]/)[0].toLowerCase();
+        const fullClause = ability.toLowerCase();
+        if (/for each\b/.test(afterMatch) || /equal to\b/.test(afterMatch) || /a number of\b/.test(fullClause)) {
           // Check if count is based on copies of this card ("named [card name]")
-          if (new RegExp(`named\\s+${card.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(sameClause)) {
+          if (new RegExp(`named\\s+${card.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(fullClause)) {
             parsed.countMode = 'self-copies';
             parsed.count = 0; // will be calculated from battlefield state
-          } else if (/\+1\/\+1 counter|counter on/i.test(sameClause)) {
+          } else if (/\+1\/\+1 counter|counter on/i.test(fullClause)) {
             parsed.countMode = 'counters';
             parsed.count = -1; // will be resolved from stored counters
           } else {
@@ -332,20 +364,26 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
         // If the card is modal, mark as conditional
         if (isModal) {
           parsed.isConditional = true;
+          parsed.conditionKey = `${card.name}-modal-${conditionCounter++}`;
           parsed.condition = parsed.name;
+          parsed.conditionType = 'modal';
         }
 
         // Multiple activated abilities on one card: mark as conditional so user can choose
         if (hasMultipleActivated && ACTIVATED_TOKEN_RE.test(ability)) {
           parsed.isConditional = true;
+          parsed.conditionKey = parsed.conditionKey || `${card.name}-act-${conditionCounter++}`;
           parsed.condition = parsed.condition || parsed.name;
+          parsed.conditionType = parsed.conditionType || 'activated-choice';
         }
 
         // Detect "if you control no [type]" conditions (e.g., Ophiomancer)
         const noControlMatch = ability.match(/if you control no (\w+)/i);
         if (noControlMatch) {
           parsed.isConditional = true;
+          parsed.conditionKey = `${card.name}-board-${conditionCounter++}`;
           parsed.condition = `No ${noControlMatch[1]}`;
+          parsed.conditionType = 'board-state';
         }
 
         const key = `${parsed.name}-${parsed.power}/${parsed.toughness}`;
@@ -400,7 +438,9 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
             rawText: fabricateMatch[0],
           };
       def.isConditional = true;
+      def.conditionKey = `${card.name}-fabricate-${conditionCounter++}`;
       def.condition = 'Servo tokens';
+      def.conditionType = 'modal';
       const key = `${def.name}-fabricate`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -423,6 +463,27 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
             rawText: incubateMatch[0],
           };
       const key = `${def.name}-incubate`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        tokens.push(def);
+      }
+    }
+
+    // Afterlife: "afterlife N" — when this creature dies, create N 1/1 white and black Spirit tokens with flying
+    const afterlifeMatch = ability.match(/\bafterlife\s+(\d+)/i);
+    if (afterlifeMatch && !existingNames.has('spirit')) {
+      const count = parseInt(afterlifeMatch[1], 10);
+      const spiritData = tokenData.find(t => t.name.toLowerCase() === 'spirit');
+      const def: TokenDefinition = spiritData
+        ? buildTokenDefFromData(spiritData, count, afterlifeMatch[0])
+        : {
+            count,
+            power: '1', toughness: '1',
+            colors: ['white', 'black'], name: 'Spirit',
+            types: ['creature'], keywords: ['flying'],
+            rawText: afterlifeMatch[0],
+          };
+      const key = `${def.name}-afterlife`;
       if (!seen.has(key)) {
         seen.add(key);
         tokens.push(def);

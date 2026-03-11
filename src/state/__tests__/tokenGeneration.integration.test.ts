@@ -35,6 +35,7 @@ function makeDeckCard(name: string, overrides: Partial<DeckCard> = {}): DeckCard
       colors: ['white'], name: 'Soldier', types: ['creature'],
       keywords: [], rawText: 'a 1/1 white Soldier creature token',
     }],
+    supportEffects: [],
     tokenArt: [],
     triggerInfo: { type: 'etb', label: 'ETB' },
     ...overrides,
@@ -86,10 +87,10 @@ function makeChatterfang(): DeckCard {
       colors: ['green'], name: 'Squirrel', types: ['creature'],
       keywords: [], rawText: '1/1 green Squirrel creature token',
     }],
-    supportEffect: {
+    supportEffects: [{
       type: 'companion', factor: 1,
       rawText: 'those tokens plus that many',
-    },
+    }],
     triggerInfo: undefined,
   });
 }
@@ -108,10 +109,10 @@ function makeAcademyManufactor(): DeckCard {
     },
     category: 'support',
     tokens: [],
-    supportEffect: {
+    supportEffects: [{
       type: 'companion', factor: 1,
       rawText: 'instead create one of each',
-    },
+    }],
     triggerInfo: undefined,
   });
 }
@@ -222,10 +223,10 @@ function makeDoubler(name = 'Anointed Procession'): DeckCard {
     },
     category: 'support',
     tokens: [],
-    supportEffect: {
+    supportEffects: [{
       type: 'multiplier', factor: 2,
       rawText: 'twice that many of those tokens',
-    },
+    }],
     triggerInfo: undefined,
   });
 }
@@ -240,10 +241,10 @@ function makeAdder(name = 'Token Adder'): DeckCard {
     },
     category: 'support',
     tokens: [],
-    supportEffect: {
+    supportEffects: [{
       type: 'additional', factor: 1,
       rawText: 'an additional token',
-    },
+    }],
     triggerInfo: undefined,
   });
 }
@@ -258,10 +259,10 @@ function makeCreatureDoubler(name = 'Creature Doubler'): DeckCard {
     },
     category: 'support',
     tokens: [],
-    supportEffect: {
+    supportEffects: [{
       type: 'multiplier', factor: 2, condition: 'creature tokens',
       rawText: 'twice that many of those creature tokens',
-    },
+    }],
     triggerInfo: undefined,
   });
 }
@@ -1219,6 +1220,86 @@ describe('Token Generation Integration Tests', () => {
       state = toggleAndTriggerRhysDouble(state, 1);
       expect(totalTokenCount(state.standaloneTokens, 'Treasure')).toBe(1);
       expect(state.standaloneTokens.length).toBe(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Multi-support stacking
+  // -------------------------------------------------------------------------
+  describe('Multi-support stacking', () => {
+    it('two multipliers stack multiplicatively (x2 × x2 = x4)', () => {
+      const soldier = makeDeckCard('Soldier Maker');
+      const doubler1 = makeDoubler();
+      doubler1.scryfallData.name = 'Doubling Season';
+      const doubler2 = makeDoubler();
+      doubler2.scryfallData.name = 'Anointed Procession';
+      const deckCards = [soldier, doubler1, doubler2];
+      let state = stateWith({ deckCards });
+
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 1 } });
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 2 } });
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 0 } });
+
+      // 1 Soldier × 2 × 2 = 4
+      expect(totalTokenCount(state.standaloneTokens, 'Soldier')).toBe(4);
+    });
+
+    it('additional + multiplier stack correctly ((base + add) × mult)', () => {
+      const soldier = makeDeckCard('Soldier Maker');
+      const adder = makeAdder();
+      const doubler = makeDoubler();
+      const deckCards = [soldier, adder, doubler];
+      let state = stateWith({ deckCards });
+
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 1 } });
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 2 } });
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 0 } });
+
+      // (1 + 1) × 2 = 4
+      expect(totalTokenCount(state.standaloneTokens, 'Soldier')).toBe(4);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // conditionKey-based toggle behavior
+  // -------------------------------------------------------------------------
+  describe('conditionKey toggle behavior', () => {
+    it('uses conditionKey instead of name for toggling', () => {
+      const card = makeDeckCard('Conditional Card', {
+        tokens: [
+          {
+            count: 1, power: '1', toughness: '1',
+            colors: ['white'], name: 'Soldier', types: ['creature'],
+            keywords: [], rawText: 'a 1/1 white Soldier creature token',
+            isConditional: true, conditionKey: 'ability-1',
+            condition: 'First ability', conditionType: 'activated-choice',
+          },
+          {
+            count: 2, power: '2', toughness: '2',
+            colors: ['black'], name: 'Zombie', types: ['creature'],
+            keywords: [], rawText: 'two 2/2 black Zombie creature tokens',
+            isConditional: true, conditionKey: 'ability-2',
+            condition: 'Second ability', conditionType: 'activated-choice',
+          },
+        ],
+        triggerInfo: { type: 'tap', label: 'Tap' },
+      });
+      const deckCards = [card];
+      let state = stateWith({ deckCards });
+
+      // Play card
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 0 } });
+      // All conditional — nothing created on play
+      expect(state.standaloneTokens).toHaveLength(0);
+
+      // Toggle ability-1 on
+      const instanceId = state.battlefield[0].instanceId;
+      state = appReducer(state, { type: 'TOGGLE_CONDITION', payload: { instanceId, tokenName: 'ability-1' } });
+      state = appReducer(state, { type: 'TRIGGER_CARD', payload: { deckCardIndex: 0 } });
+
+      // Should create 1 Soldier (ability-1), not Zombie
+      expect(totalTokenCount(state.standaloneTokens, 'Soldier')).toBe(1);
+      expect(totalTokenCount(state.standaloneTokens, 'Zombie')).toBe(0);
     });
   });
 });

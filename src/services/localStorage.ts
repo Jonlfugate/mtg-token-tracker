@@ -1,7 +1,7 @@
 import type { AppState } from '../types';
 
 const STORAGE_KEY = 'mtg-token-tracker';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 interface StorageWrapper {
   version: number;
@@ -42,6 +42,22 @@ export function loadState(): AppState | null {
   }
 }
 
+function migrateState(data: Record<string, unknown>): void {
+  // v1 → v2: supportEffect (single) → supportEffects (array)
+  if (Array.isArray(data.deckCards)) {
+    for (const card of data.deckCards as Record<string, unknown>[]) {
+      if ('supportEffect' in card && !('supportEffects' in card)) {
+        const effect = card.supportEffect;
+        card.supportEffects = effect ? [effect] : [];
+        delete card.supportEffect;
+      }
+      if (!('supportEffects' in card)) {
+        card.supportEffects = [];
+      }
+    }
+  }
+}
+
 function validateState(data: unknown): AppState | null {
   if (!data || typeof data !== 'object') return null;
   const obj = data as Record<string, unknown>;
@@ -49,6 +65,9 @@ function validateState(data: unknown): AppState | null {
   // Check required fields exist
   if (!Array.isArray(obj.deckCards) || !Array.isArray(obj.battlefield)) return null;
   if (typeof obj.importStatus !== 'string') return null;
+
+  // Migrate old schema
+  migrateState(obj);
 
   return obj as unknown as AppState;
 }

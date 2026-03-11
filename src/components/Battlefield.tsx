@@ -311,11 +311,14 @@ export function Battlefield() {
                 // Use the first instance for conditions
                 const firstBc = battlefield.find(b => b.instanceId === instanceIds[0]);
                 const conditionsMet = firstBc?.conditionsMet ?? {};
-                const conditions = conditionalTokens.map(t => ({
-                  tokenName: t.name,
-                  label: t.condition || t.name,
-                  checked: conditionsMet[t.name] ?? false,
-                }));
+                const conditions = conditionalTokens.map(t => {
+                  const key = t.conditionKey || t.name;
+                  return {
+                    tokenName: key,
+                    label: t.condition || t.name,
+                    checked: conditionsMet[key] ?? false,
+                  };
+                });
 
                 // Show counter badge if this card uses counters
                 const counterCount = firstBc?.counters;

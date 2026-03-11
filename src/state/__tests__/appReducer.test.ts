@@ -15,6 +15,7 @@ function makeDeckCard(name: string, overrides: Partial<DeckCard> = {}): DeckCard
       colors: ['white'], name: 'Soldier', types: ['creature'],
       keywords: [], rawText: 'a 1/1 white Soldier creature token',
     }],
+    supportEffects: [],
     tokenArt: [],
     triggerInfo: { type: 'etb', label: 'ETB' },
     ...overrides,

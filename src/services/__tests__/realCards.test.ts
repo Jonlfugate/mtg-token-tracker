@@ -43,7 +43,7 @@ describe('Rhys the Redeemed', () => {
 
   it('should not be a support card', () => {
     const support = detectSupport(card);
-    expect(support).toBeUndefined();
+    expect(support).toHaveLength(0);
   });
 });
 

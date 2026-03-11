@@ -58,16 +58,17 @@ export function useDeckImport() {
         .map(entry => {
           const { card: scryfallData, tokenArt, tokenData } = cardDataMap.get(entry.name)!;
           const tokens = detectTokens(scryfallData, tokenData);
-          const supportEffect = detectSupport(scryfallData);
+          const supportEffects = detectSupport(scryfallData);
           const oracleText = scryfallData.oracle_text || scryfallData.card_faces?.map(f => f.oracle_text || '').join('\n') || '';
           const hasPopulate = /\bpopulate\b/i.test(oracleText);
 
           // Companion cards like Chatterfang create their own token type but
           // detectTokens skips them (isReplacementEffect). Populate from Scryfall
           // token data so the reducer knows what companion token to create.
-          const isManufactorStyle = supportEffect?.type === 'companion'
+          const hasCompanion = supportEffects.some(e => e.type === 'companion');
+          const isManufactorStyle = hasCompanion
             && /instead\s+create\s+one\s+of\s+each/i.test(oracleText);
-          if (supportEffect?.type === 'companion' && !isManufactorStyle && tokens.length === 0 && tokenData.length > 0) {
+          if (hasCompanion && !isManufactorStyle && tokens.length === 0 && tokenData.length > 0) {
             tokens.push(tokenDefFromData(tokenData[0]));
           }
 
@@ -75,11 +76,11 @@ export function useDeckImport() {
           const triggerInfo = isGenerator ? detectTriggerType(scryfallData) ?? undefined : undefined;
 
           let category: CardCategory = 'other';
-          if (isGenerator && supportEffect) {
+          if (isGenerator && supportEffects.length > 0) {
             category = 'both';
           } else if (isGenerator) {
             category = 'token-generator';
-          } else if (supportEffect) {
+          } else if (supportEffects.length > 0) {
             category = 'support';
           }
 
@@ -88,7 +89,7 @@ export function useDeckImport() {
             scryfallData,
             category,
             tokens,
-            supportEffect,
+            supportEffects,
             tokenArt,
             triggerInfo,
             hasPopulate,

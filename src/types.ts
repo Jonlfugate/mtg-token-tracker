@@ -58,6 +58,8 @@ export interface TokenArt {
   toughness?: string;
 }
 
+export type ConditionType = 'modal' | 'activated-choice' | 'board-state' | 'replacement';
+
 export interface TokenDefinition {
   count: number; // -1 for X (variable)
   power: string;
@@ -67,7 +69,9 @@ export interface TokenDefinition {
   types: string[];
   keywords: string[];
   rawText: string;
-  condition?: string; // e.g., "6+ lands" — only created when condition is met
+  conditionKey?: string; // unique key for condition toggle (auto-generated if not set)
+  condition?: string; // e.g., "6+ lands" — display label for the condition
+  conditionType?: ConditionType; // why this token is conditional
   isConditional?: boolean; // true if this is the conditional version
   isReplacement?: boolean; // true if this replaces the default token ("instead")
   countMode?: 'self-copies' | 'counters' | 'double-tokens'; // auto-count from battlefield state
@@ -93,7 +97,7 @@ export interface DeckCard {
   scryfallData: ScryfallCard;
   category: CardCategory;
   tokens: TokenDefinition[];
-  supportEffect?: SupportEffect;
+  supportEffects: SupportEffect[];
   tokenArt: TokenArt[];
   triggerInfo?: TriggerInfo;
   hasPopulate?: boolean;
@@ -104,7 +108,7 @@ export interface BattlefieldCard {
   deckCardIndex: number;
   xValue?: number; // for cards that create X tokens
   counters?: number; // +1/+1 counters (e.g., Mycoloth devour)
-  conditionsMet?: Record<string, boolean>; // per-token condition toggles, keyed by token name
+  conditionsMet?: Record<string, boolean>; // per-token condition toggles, keyed by conditionKey
 }
 
 // Tokens that persist independently (from instants/sorceries)

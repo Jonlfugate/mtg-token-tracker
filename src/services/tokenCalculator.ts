@@ -1,33 +1,39 @@
-import type { DeckCard, TokenCalculationResult } from '../types';
+import type { DeckCard, SupportEffect, TokenCalculationResult } from '../types';
+
+/** Flatten all non-companion support effects from support cards, sorted: additionals first, then multipliers */
+function collectSupportEffects(supportCards: DeckCard[]): Array<{ card: DeckCard; effect: SupportEffect }> {
+  const pairs: Array<{ card: DeckCard; effect: SupportEffect }> = [];
+  for (const card of supportCards) {
+    for (const effect of card.supportEffects) {
+      if (effect.type === 'companion') continue;
+      pairs.push({ card, effect });
+    }
+  }
+  // Sort: additional effects first, then multipliers
+  // This order maximizes output (which is what players typically want)
+  pairs.sort((a, b) => {
+    if (a.effect.type === 'additional' && b.effect.type === 'multiplier') return -1;
+    if (a.effect.type === 'multiplier' && b.effect.type === 'additional') return 1;
+    return 0;
+  });
+  return pairs;
+}
 
 export function calculateTokens(
   generator: DeckCard,
   activeSupportCards: DeckCard[],
   variableX: number = 1,
 ): TokenCalculationResult[] {
+  const supportEffects = collectSupportEffects(activeSupportCards);
+
   return generator.tokens.map(tokenDef => {
     const baseCount = tokenDef.count === -1 ? variableX : tokenDef.count;
-
-    // Sort: additional effects first, then multipliers
-    // This order maximizes output (which is what players typically want)
-    const sortedSupport = [...activeSupportCards]
-      .filter(s => s.supportEffect)
-      .sort((a, b) => {
-        if (a.supportEffect!.type === 'additional' && b.supportEffect!.type === 'multiplier') return -1;
-        if (a.supportEffect!.type === 'multiplier' && b.supportEffect!.type === 'additional') return 1;
-        return 0;
-      });
 
     let count = baseCount;
     const breakdownParts: string[] = [String(baseCount)];
     const activeMultipliers: TokenCalculationResult['activeMultipliers'] = [];
 
-    for (const support of sortedSupport) {
-      const effect = support.supportEffect!;
-
-      // Skip companion effects — handled in the reducer (e.g., Chatterfang creates separate tokens)
-      if (effect.type === 'companion') continue;
-
+    for (const { card: support, effect } of supportEffects) {
       // Check condition match (e.g., "creature tokens" only)
       if (effect.condition === 'creature tokens' && !tokenDef.types.includes('creature')) {
         continue;

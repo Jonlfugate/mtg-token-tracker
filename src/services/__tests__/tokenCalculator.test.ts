@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { calculateTokens } from '../tokenCalculator';
 import type { DeckCard, TokenDefinition, SupportEffect } from '../../types';
 
-function makeDeckCard(tokens: TokenDefinition[], supportEffect?: SupportEffect): DeckCard {
+function makeDeckCard(tokens: TokenDefinition[], supportEffects: SupportEffect[] = []): DeckCard {
   return {
     decklistEntry: { quantity: 1, name: 'Test Card' },
     scryfallData: {
@@ -12,7 +12,7 @@ function makeDeckCard(tokens: TokenDefinition[], supportEffect?: SupportEffect):
     category: 'token-generator',
     tokens,
     tokenArt: [],
-    supportEffect,
+    supportEffects,
   };
 }
 
@@ -26,7 +26,7 @@ function makeSupportCard(effect: SupportEffect): DeckCard {
     category: 'support',
     tokens: [],
     tokenArt: [],
-    supportEffect: effect,
+    supportEffects: [effect],
   };
 }
 

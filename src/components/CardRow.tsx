@@ -161,14 +161,16 @@ export const CardRow = memo(function CardRow({
               ))}
             </span>
           )}
-          {card.supportEffect && (
-            <span className="support-info">
-              {card.supportEffect.type === 'multiplier'
-                ? `×${card.supportEffect.factor} tokens`
-                : `+${card.supportEffect.factor} token`}
-              {card.supportEffect.condition && ` (${card.supportEffect.condition})`}
+          {card.supportEffects.length > 0 && card.supportEffects.map((effect, i) => (
+            <span key={i} className="support-info">
+              {effect.type === 'multiplier'
+                ? `×${effect.factor} tokens`
+                : effect.type === 'additional'
+                ? `+${effect.factor} token`
+                : `companion`}
+              {effect.condition && ` (${effect.condition})`}
             </span>
-          )}
+          ))}
         </div>
       )}
 
@@ -181,14 +183,16 @@ export const CardRow = memo(function CardRow({
         </span>
       )}
 
-      {compact && card.supportEffect && (
-        <span className="support-info">
-          {card.supportEffect.type === 'multiplier'
-            ? `×${card.supportEffect.factor} tokens`
-            : `+${card.supportEffect.factor} token`}
-          {card.supportEffect.condition && ` (${card.supportEffect.condition})`}
+      {compact && card.supportEffects.length > 0 && card.supportEffects.map((effect, i) => (
+        <span key={i} className="support-info">
+          {effect.type === 'multiplier'
+            ? `×${effect.factor} tokens`
+            : effect.type === 'additional'
+            ? `+${effect.factor} token`
+            : `companion`}
+          {effect.condition && ` (${effect.condition})`}
         </span>
-      )}
+      ))}
 
       {conditions && conditions.length > 0 && conditions.map(cond => (
         <label key={cond.tokenName} className="condition-toggle" title={cond.label}>

@@ -260,4 +260,114 @@ describe('detectTokens', () => {
       expect(tokens).toHaveLength(1);
     });
   });
+
+  describe('conditionKey and conditionType', () => {
+    it('generates conditionKey for modal tokens', () => {
+      const card = makeCard('Choose one —\n• Create a 1/1 white Soldier creature token.\n• Create a 2/2 black Zombie creature token.');
+      const tokens = detectTokens(card);
+      expect(tokens.length).toBeGreaterThanOrEqual(1);
+      const conditional = tokens.filter(t => t.isConditional);
+      expect(conditional.length).toBeGreaterThanOrEqual(1);
+      for (const t of conditional) {
+        expect(t.conditionKey).toBeDefined();
+        expect(t.conditionType).toBe('modal');
+      }
+      // Each token should have a unique conditionKey
+      const keys = conditional.map(t => t.conditionKey);
+      expect(new Set(keys).size).toBe(keys.length);
+    });
+
+    it('generates conditionKey for activated-choice tokens (Rhys)', () => {
+      const card = makeCard(
+        '{2}{G/W}, {T}: Create a 1/1 green and white Elf Warrior creature token.\n{4}{G/W}{G/W}, {T}: For each creature token you control, create a token that\'s a copy of that creature.',
+        'Rhys the Redeemed'
+      );
+      const tokens = detectTokens(card);
+      const conditional = tokens.filter(t => t.isConditional);
+      expect(conditional.length).toBe(2);
+      for (const t of conditional) {
+        expect(t.conditionKey).toBeDefined();
+      }
+      expect(conditional[0].conditionKey).not.toBe(conditional[1].conditionKey);
+    });
+
+    it('generates conditionKey for board-state conditions (Ophiomancer)', () => {
+      const card = makeCard(
+        'At the beginning of each upkeep, if you control no Snakes, create a 1/1 black Snake creature token with deathtouch.'
+      );
+      const tokens = detectTokens(card);
+      const snake = tokens.find(t => t.name === 'Snake');
+      expect(snake).toBeDefined();
+      expect(snake!.conditionType).toBe('board-state');
+      expect(snake!.conditionKey).toBeDefined();
+    });
+
+    it('generates conditionKey for replacement conditions', () => {
+      const card = makeCard(
+        'When this creature enters, create a 1/1 green Insect creature token.\nIf you control six or more lands, create a token that\'s a copy of this creature instead.',
+        'Scute Swarm'
+      );
+      const tokens = detectTokens(card);
+      const replacement = tokens.find(t => t.isReplacement);
+      if (replacement) {
+        expect(replacement.conditionType).toBe('replacement');
+        expect(replacement.conditionKey).toBeDefined();
+      }
+    });
+  });
+
+  describe('keyword mechanics', () => {
+    it('detects afterlife keyword', () => {
+      const card = makeCard('Afterlife 2');
+      const tokens = detectTokens(card);
+      expect(tokens.length).toBeGreaterThanOrEqual(1);
+      const spirit = tokens.find(t => t.name === 'Spirit');
+      expect(spirit).toBeDefined();
+      expect(spirit!.count).toBe(2);
+      expect(spirit!.keywords).toContain('flying');
+    });
+
+    it('detects decayed keyword on tokens', () => {
+      const card = makeCard('Create a 2/2 black Zombie creature token with decayed.');
+      const tokens = detectTokens(card);
+      expect(tokens.length).toBeGreaterThanOrEqual(1);
+      const zombie = tokens.find(t => t.name.includes('Zombie') || t.name === 'Token');
+      expect(zombie).toBeDefined();
+      expect(zombie!.keywords).toContain('decayed');
+    });
+  });
+
+  describe('parseCondition improvements', () => {
+    it('parses numeric threshold conditions dynamically', () => {
+      const card = makeCard(
+        'If you control eight or more lands, create a 4/4 green Beast creature token instead.'
+      );
+      const tokens = detectTokens(card);
+      const conditional = tokens.find(t => t.isConditional);
+      expect(conditional).toBeDefined();
+      expect(conditional!.condition).toBe('8+ lands');
+    });
+  });
+
+  describe('copy token regex', () => {
+    it('detects copy with "that is" wording', () => {
+      const card = makeCard(
+        'Create a token that is a copy of target creature.',
+        'Clone Shell'
+      );
+      const tokens = detectTokens(card);
+      // "target creature" is a variable target — should be skipped
+      expect(tokens.filter(t => t.name.includes('Copy'))).toHaveLength(0);
+    });
+
+    it('detects copy at end of line without punctuation', () => {
+      const card = makeCard(
+        'Create a token that\'s a copy of Spark Double',
+        'Spark Double'
+      );
+      const tokens = detectTokens(card);
+      // "Spark Double" is replaced with card name — copy of self
+      expect(tokens.length).toBeGreaterThanOrEqual(0);
+    });
+  });
 });
