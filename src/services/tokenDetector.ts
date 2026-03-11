@@ -289,6 +289,9 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
           if (new RegExp(`named\\s+${card.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(sameClause)) {
             parsed.countMode = 'self-copies';
             parsed.count = 0; // will be calculated from battlefield state
+          } else if (/\+1\/\+1 counter|counter on/i.test(sameClause)) {
+            parsed.countMode = 'counters';
+            parsed.count = -1; // will be resolved from stored counters
           } else {
             parsed.count = -1;
           }

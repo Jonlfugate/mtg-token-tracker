@@ -70,7 +70,7 @@ export interface TokenDefinition {
   condition?: string; // e.g., "6+ lands" — only created when condition is met
   isConditional?: boolean; // true if this is the conditional version
   isReplacement?: boolean; // true if this replaces the default token ("instead")
-  countMode?: 'self-copies'; // auto-count from battlefield state (e.g., Hare Apparent)
+  countMode?: 'self-copies' | 'counters'; // auto-count from battlefield state
 }
 
 export interface SupportEffect {
@@ -103,6 +103,7 @@ export interface BattlefieldCard {
   instanceId: string;
   deckCardIndex: number;
   xValue?: number; // for cards that create X tokens
+  counters?: number; // +1/+1 counters (e.g., Mycoloth devour)
   conditionsMet?: Record<string, boolean>; // per-token condition toggles, keyed by token name
 }
 

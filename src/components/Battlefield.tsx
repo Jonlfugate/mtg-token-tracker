@@ -92,7 +92,7 @@ export function Battlefield() {
 
   const handleTrigger = useCallback((deckCardIndex: number) => {
     const card = deckCards[deckCardIndex];
-    const hasVariable = card.tokens.some(t => t.count === -1);
+    const hasVariable = card.tokens.some(t => t.count === -1 && t.countMode !== 'counters');
     if (card.tokens.length > 0) {
       if (hasVariable) {
         setTriggerXModal(deckCardIndex);
@@ -317,12 +317,17 @@ export function Battlefield() {
                   checked: conditionsMet[t.name] ?? false,
                 }));
 
+                // Show counter badge if this card uses counters
+                const counterCount = firstBc?.counters;
+                const counterLabel = counterCount !== undefined ? ` [${counterCount} counters]` : '';
+
                 // Show one grouped row with count and -/+ controls
                 return (
                   <CardRow
                     key={deckIdx}
                     card={card}
                     inPlayCount={instanceIds.length}
+                    extraLabel={counterLabel || undefined}
                     onRemove={() => handleRemoveCard(instanceIds[instanceIds.length - 1])}
                     onAdd={() => handleAddCard(deckIdx)}
                     showRemoveButton

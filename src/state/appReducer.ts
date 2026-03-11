@@ -61,6 +61,7 @@ function resolveActiveCard(
   conditionsMet: Record<string, boolean>,
   battlefield: BattlefieldCard[],
   deckCardIndex: number,
+  counters?: number,
 ): DeckCard {
   let activeCard = getActiveTokens(card, conditionsMet);
 
@@ -70,6 +71,15 @@ function resolveActiveCard(
       ...activeCard,
       tokens: activeCard.tokens.map(t =>
         t.countMode === 'self-copies' ? { ...t, count: Math.max(0, inPlay - 1) } : t
+      ),
+    };
+  }
+
+  if (counters !== undefined && activeCard.tokens.some(t => t.countMode === 'counters')) {
+    activeCard = {
+      ...activeCard,
+      tokens: activeCard.tokens.map(t =>
+        t.countMode === 'counters' ? { ...t, count: counters } : t
       ),
     };
   }
@@ -117,7 +127,7 @@ export type AppAction =
   | { type: 'FETCH_PROGRESS'; payload: { done: number; total: number } }
   | { type: 'IMPORT_COMPLETE'; payload: DeckCard[] }
   | { type: 'IMPORT_ERROR'; payload: string }
-  | { type: 'PLAY_CARD'; payload: { deckCardIndex: number; xValue?: number; quantity?: number } }
+  | { type: 'PLAY_CARD'; payload: { deckCardIndex: number; xValue?: number; quantity?: number; counters?: number } }
   | { type: 'REMOVE_CARD'; payload: { instanceId: string } }
   | { type: 'TRIGGER_CARD'; payload: { deckCardIndex: number; xValue?: number } }
   | { type: 'TRIGGER_ALL'; payload: { triggerTypes: string[] } }
@@ -184,7 +194,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, importStatus: 'error', error: action.payload };
 
     case 'PLAY_CARD': {
-      const { deckCardIndex, xValue, quantity = 1 } = action.payload;
+      const { deckCardIndex, xValue, quantity = 1, counters } = action.payload;
       const deckCard = state.deckCards[deckCardIndex];
       if (!deckCard) return state;
 
@@ -236,7 +246,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       // Permanents go to the battlefield
       const newCards: BattlefieldCard[] = [];
       for (let i = 0; i < quantity; i++) {
-        newCards.push({ instanceId: crypto.randomUUID(), deckCardIndex, xValue });
+        newCards.push({ instanceId: crypto.randomUUID(), deckCardIndex, xValue, counters });
       }
 
       return {
@@ -256,7 +266,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
       const undoStack = pushUndo(state);
       const bc = state.battlefield.find(b => b.deckCardIndex === deckCardIndex);
-      const activeCard = resolveActiveCard(deckCard, bc?.conditionsMet ?? {}, state.battlefield, deckCardIndex);
+      const activeCard = resolveActiveCard(deckCard, bc?.conditionsMet ?? {}, state.battlefield, deckCardIndex, bc?.counters);
       const supportCards = getSupportCards(state);
       const results = calculateTokens(activeCard, supportCards, xValue ?? 1);
       const newTokens = createStandaloneTokens(results, deckCard.scryfallData.name, deckCardIndex, state.currentTurn);
@@ -282,8 +292,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         const card = state.deckCards[bc.deckCardIndex];
         if (!isTokenGenerator(card) || !card.triggerInfo || !triggerTypes.includes(card.triggerInfo.type)) continue;
 
-        const activeCard = resolveActiveCard(card, bc.conditionsMet ?? {}, state.battlefield, bc.deckCardIndex);
-        if (activeCard.tokens.some(t => t.count === -1)) {
+        const activeCard = resolveActiveCard(card, bc.conditionsMet ?? {}, state.battlefield, bc.deckCardIndex, bc.counters);
+        if (activeCard.tokens.some(t => t.count === -1 && t.countMode !== 'counters')) {
           xTriggerQueue.push(bc.deckCardIndex);
           continue;
         }

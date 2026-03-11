@@ -204,9 +204,8 @@ export const CardRow = memo(function CardRow({
         </label>
       ))}
 
-      {children}
-
       <div className="card-actions">
+        {children}
         {onTrigger && (
           <button onClick={onTrigger} className="trigger-btn" title={`Trigger: ${triggerLabel || 'Activate'}`}>
             {triggerLabel || 'Activate'}

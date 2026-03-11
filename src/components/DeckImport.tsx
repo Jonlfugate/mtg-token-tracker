@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useDeckImport } from '../hooks/useDeckImport';
 import { useAppContext } from '../state/AppContext';
 
-const EXAMPLE_DECK = `1 Doubling Season (2X2) 175
+const EXAMPLE_DECK = `4 Hare Apparent (MKM) 14
+1 Doubling Season (2X2) 175
 1 Parallel Lives (ISD) 199
 1 Anointed Procession (AKH) 2
 1 Mondrak, Glory Dominus (ONE) 17
@@ -10,9 +11,12 @@ const EXAMPLE_DECK = `1 Doubling Season (2X2) 175
 1 Scute Swarm (ZNR) 203
 1 Tendershoot Dryad (RIX) 147
 1 Mycoloth (PCA) 70
-1 Verdant Force (DOM) 187
+1 Secure the Wastes (DTK) 36
+1 Adeline, Resplendent Cathar (MID) 1
+1 Rhys the Redeemed (SHM) 237
 1 Felidar Retreat (ZNR) 16
-37 Forest (ZNR) 384`;
+1 Verdant Force (DOM) 187
+33 Forest (ZNR) 384`;
 
 export function DeckImport({ onDeckLoaded }: { onDeckLoaded?: () => void }) {
   const [text, setText] = useState('');

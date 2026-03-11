@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useAppContext } from '../state/AppContext';
 import { CardRow } from './CardRow';
-import { XValueModal } from './XValueModal';
 import type { DeckCard } from '../types';
 
 const TYPE_ORDER = ['creature', 'enchantment', 'artifact', 'planeswalker', 'instant', 'sorcery', 'land'];
@@ -51,7 +50,7 @@ function groupByType(cards: Array<{ card: DeckCard; index: number }>): TypeGroup
 export function DeckList() {
   const { state, dispatch } = useAppContext();
   const { deckCards, battlefield } = state;
-  const [xModalIndex, setXModalIndex] = useState<number | null>(null);
+  const [playValues, setPlayValues] = useState<Record<number, number>>({});
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   const generators = useMemo(() =>
@@ -79,24 +78,32 @@ export function DeckList() {
   const needsXOnPlay = (index: number) => {
     const card = deckCards[index];
     if (card.tokens.some(t => t.countMode === 'self-copies')) return false;
+    if (card.tokens.some(t => t.countMode === 'counters')) return false;
     if (!card.tokens.some(t => t.count === -1)) return false;
     const type = card.scryfallData.type_line.toLowerCase();
     const isInstantSorcery = type.includes('instant') || type.includes('sorcery');
     return isInstantSorcery || card.triggerInfo?.type === 'etb' || card.triggerInfo?.alsoEtb || !card.triggerInfo;
   };
 
-  const handlePlay = (deckCardIndex: number) => {
-    if (needsXOnPlay(deckCardIndex)) {
-      setXModalIndex(deckCardIndex);
-    } else {
-      dispatch({ type: 'PLAY_CARD', payload: { deckCardIndex } });
-    }
+  const needsCounters = (index: number) => {
+    return deckCards[index].tokens.some(t => t.countMode === 'counters');
   };
 
-  const handleXConfirm = (xValue: number) => {
-    if (xModalIndex !== null) {
-      dispatch({ type: 'PLAY_CARD', payload: { deckCardIndex: xModalIndex, xValue } });
-      setXModalIndex(null);
+  const getPlayValue = (index: number) => playValues[index] ?? 1;
+
+  const setPlayValue = (index: number, value: number) => {
+    const min = needsCounters(index) ? 0 : 1;
+    setPlayValues(prev => ({ ...prev, [index]: Math.max(min, value) }));
+  };
+
+  const handlePlay = (deckCardIndex: number) => {
+    const value = getPlayValue(deckCardIndex);
+    if (needsXOnPlay(deckCardIndex)) {
+      dispatch({ type: 'PLAY_CARD', payload: { deckCardIndex, xValue: value } });
+    } else if (needsCounters(deckCardIndex)) {
+      dispatch({ type: 'PLAY_CARD', payload: { deckCardIndex, counters: value } });
+    } else {
+      dispatch({ type: 'PLAY_CARD', payload: { deckCardIndex, quantity: value } });
     }
   };
 
@@ -105,6 +112,9 @@ export function DeckList() {
   };
 
   const renderCardRow = (card: DeckCard, index: number) => {
+    const usesX = needsXOnPlay(index);
+    const usesCounters = needsCounters(index);
+    const inputLabel = usesX ? 'X value' : usesCounters ? 'Counters' : 'Qty';
     return (
       <CardRow
         key={index}
@@ -113,7 +123,18 @@ export function DeckList() {
         onPlay={() => handlePlay(index)}
         showPlayButton
         compact
-      />
+      >
+        <input
+          type="number"
+          className="play-value-input"
+          min={usesCounters ? 0 : 1}
+          value={getPlayValue(index)}
+          onChange={(e) => setPlayValue(index, parseInt(e.target.value) || (usesCounters ? 0 : 1))}
+          onFocus={(e) => e.target.select()}
+          title={inputLabel}
+          aria-label={inputLabel}
+        />
+      </CardRow>
     );
   };
 
@@ -163,13 +184,6 @@ export function DeckList() {
         </div>
       )}
 
-      {xModalIndex !== null && (
-        <XValueModal
-          cardName={deckCards[xModalIndex].scryfallData.name}
-          onConfirm={handleXConfirm}
-          onCancel={() => setXModalIndex(null)}
-        />
-      )}
     </div>
   );
 }
