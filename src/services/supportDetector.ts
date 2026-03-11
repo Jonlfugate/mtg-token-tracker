@@ -28,7 +28,7 @@ const SUPPORT_PATTERNS: SupportPattern[] = [
   // "also create that many" (Chatterfang — whenever you create tokens, also create Squirrels)
   { regex: /also\s+create\s+that\s+many/i, type: 'companion', factor: 1 },
   // "instead create one of each" (Academy Manufactor — Clue/Food/Treasure replacement)
-  { regex: /instead\s+create\s+one\s+of\s+each/i, type: 'additional', factor: 2 },
+  { regex: /instead\s+create\s+one\s+of\s+each/i, type: 'companion', factor: 1 },
 ];
 
 export function detectSupport(card: ScryfallCard): SupportEffect | undefined {

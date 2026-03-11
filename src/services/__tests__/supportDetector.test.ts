@@ -44,14 +44,14 @@ describe('detectSupport', () => {
     expect(result).toBeUndefined();
   });
 
-  it('detects Academy Manufactor as additional support with factor 2', () => {
+  it('detects Academy Manufactor as companion support', () => {
     const card = makeCard(
       'If you would create a Clue, Food, or Treasure token, instead create one of each of those tokens.'
     );
     const result = detectSupport(card);
     expect(result).toBeDefined();
-    expect(result!.type).toBe('additional');
-    expect(result!.factor).toBe(2);
+    expect(result!.type).toBe('companion');
+    expect(result!.factor).toBe(1);
   });
 
   it('detects Chatterfang as companion support with factor 1', () => {

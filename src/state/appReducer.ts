@@ -1,4 +1,4 @@
-import type { AppState, BattlefieldCard, DeckCard, HistoryEntry, StandaloneToken, TokenCalculationResult } from '../types';
+import type { AppState, BattlefieldCard, DeckCard, HistoryEntry, StandaloneToken, TokenCalculationResult, TokenDefinition } from '../types';
 import { calculateTokens } from '../services/tokenCalculator';
 import { isInstantOrSorcery, isTokenGenerator, isCopyToken } from '../services/cardUtils';
 
@@ -100,9 +100,19 @@ function shouldTriggerOnPlay(card: DeckCard): boolean {
   );
 }
 
+/** Standard artifact token definitions for Academy Manufactor */
+const ARTIFACT_TOKEN_DEFS: Record<string, TokenDefinition> = {
+  treasure: { count: 1, power: '', toughness: '', colors: [], name: 'Treasure', types: ['artifact'], keywords: [], rawText: 'Treasure token' },
+  clue: { count: 1, power: '', toughness: '', colors: [], name: 'Clue', types: ['artifact'], keywords: [], rawText: 'Clue token' },
+  food: { count: 1, power: '', toughness: '', colors: [], name: 'Food', types: ['artifact'], keywords: [], rawText: 'Food token' },
+};
+const MANUFACTOR_TOKEN_NAMES = new Set(['treasure', 'clue', 'food']);
+
 /**
- * Create companion tokens (e.g., Chatterfang Squirrels) whenever other tokens are created.
- * Returns additional standalone tokens for each companion-effect card on the battlefield.
+ * Create companion tokens whenever other tokens are created.
+ * Handles two patterns:
+ * - Chatterfang: creates Squirrels equal to total tokens created
+ * - Academy Manufactor: replaces each Clue/Food/Treasure with one of each
  */
 function createCompanionTokens(
   state: AppState,
@@ -112,7 +122,11 @@ function createCompanionTokens(
   if (newTokens.length === 0) return [];
 
   const companionTokens: StandaloneToken[] = [];
-  const totalTokensCreated = newTokens.reduce((sum, t) => sum + t.finalCount, 0);
+
+  // Non-companion support cards for multiplier calculations
+  const supportCards = state.battlefield
+    .map(b => state.deckCards[b.deckCardIndex])
+    .filter(c => (c.category === 'support' || c.category === 'both') && c.supportEffect?.type !== 'companion');
 
   for (const bc of state.battlefield) {
     const card = state.deckCards[bc.deckCardIndex];
@@ -120,26 +134,48 @@ function createCompanionTokens(
     // Don't trigger from own token creation (prevent infinite loops)
     if (bc.deckCardIndex === sourceCardIndex) continue;
 
-    // Find the companion's own token definition (e.g., Chatterfang's Squirrel)
-    if (card.tokens.length === 0) continue;
-    const companionTokenDef = card.tokens[0]; // Use first token definition
+    const oracleText = card.scryfallData.oracle_text?.toLowerCase() ?? '';
+    const isOneOfEach = /instead\s+create\s+one\s+of\s+each/i.test(oracleText);
 
-    // Apply support multipliers to companion tokens too
-    const supportCards = state.battlefield
-      .map(b => state.deckCards[b.deckCardIndex])
-      .filter(c => (c.category === 'support' || c.category === 'both') && c.supportEffect?.type !== 'companion');
+    if (isOneOfEach) {
+      // Academy Manufactor pattern: for each Clue/Food/Treasure created,
+      // also create the other two types with the same count
+      for (const token of newTokens) {
+        const tokenName = token.tokenDef.name.toLowerCase();
+        if (!MANUFACTOR_TOKEN_NAMES.has(tokenName)) continue;
 
-    const companionCard: DeckCard = {
-      ...card,
-      tokens: [{ ...companionTokenDef, count: totalTokensCreated }],
-    };
-    const results = calculateTokens(companionCard, supportCards);
-    companionTokens.push(...createStandaloneTokens(
-      results,
-      card.scryfallData.name,
-      bc.deckCardIndex,
-      state.currentTurn,
-    ));
+        // Create the two missing artifact token types
+        for (const [name, def] of Object.entries(ARTIFACT_TOKEN_DEFS)) {
+          if (name === tokenName) continue; // already being created
+          const companionCard: DeckCard = {
+            ...card,
+            tokens: [{ ...def, count: token.finalCount }],
+          };
+          const results = calculateTokens(companionCard, supportCards);
+          companionTokens.push(...createStandaloneTokens(
+            results,
+            card.scryfallData.name,
+            bc.deckCardIndex,
+            state.currentTurn,
+          ));
+        }
+      }
+    } else {
+      // Chatterfang pattern: create companion's own token equal to total created
+      if (card.tokens.length === 0) continue;
+      const totalTokensCreated = newTokens.reduce((sum, t) => sum + t.finalCount, 0);
+      const companionCard: DeckCard = {
+        ...card,
+        tokens: [{ ...card.tokens[0], count: totalTokensCreated }],
+      };
+      const results = calculateTokens(companionCard, supportCards);
+      companionTokens.push(...createStandaloneTokens(
+        results,
+        card.scryfallData.name,
+        bc.deckCardIndex,
+        state.currentTurn,
+      ));
+    }
   }
 
   return companionTokens;
