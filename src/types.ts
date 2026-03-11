@@ -70,7 +70,7 @@ export interface TokenDefinition {
   condition?: string; // e.g., "6+ lands" — only created when condition is met
   isConditional?: boolean; // true if this is the conditional version
   isReplacement?: boolean; // true if this replaces the default token ("instead")
-  countMode?: 'self-copies' | 'counters'; // auto-count from battlefield state
+  countMode?: 'self-copies' | 'counters' | 'double-tokens'; // auto-count from battlefield state
 }
 
 export interface SupportEffect {

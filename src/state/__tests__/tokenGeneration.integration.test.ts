@@ -1081,4 +1081,144 @@ describe('Token Generation Integration Tests', () => {
       expect(totalTokenCount(state.standaloneTokens, 'Squirrel')).toBe(9);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Rhys the Redeemed — double all creature tokens
+  // -------------------------------------------------------------------------
+  describe('Rhys the Redeemed (double-tokens)', () => {
+    function makeRhys(): DeckCard {
+      return makeDeckCard('Rhys the Redeemed', {
+        scryfallData: {
+          id: uid(), name: 'Rhys the Redeemed',
+          oracle_text: '{2}{G/W}, {T}: Create a 1/1 green and white Elf Warrior creature token.\n{4}{G/W}{G/W}, {T}: For each creature token you control, create a token that\'s a copy of that creature.',
+          mana_cost: '{G/W}', type_line: 'Legendary Creature — Elf Warrior',
+          power: '1', toughness: '1',
+        },
+        category: 'both',
+        tokens: [
+          {
+            count: 1, power: '1', toughness: '1',
+            colors: ['green', 'white'], name: 'Elf Warrior', types: ['creature'],
+            keywords: [], rawText: 'a 1/1 green and white Elf Warrior creature token',
+            isConditional: true, condition: 'Elf Warrior ability',
+          },
+          {
+            count: 0, power: '', toughness: '', colors: [],
+            name: 'Double all creature tokens', types: ['creature'],
+            keywords: [], rawText: 'For each creature token you control, create a token that\'s a copy of that creature.',
+            isConditional: true, condition: 'Double all creature tokens',
+            countMode: 'double-tokens',
+          },
+        ],
+        triggerInfo: { type: 'tap', label: 'Tap' },
+      });
+    }
+
+    /** Toggle the double-tokens condition on Rhys and trigger it */
+    function toggleAndTriggerRhysDouble(state: AppState, rhysDeckIndex: number): AppState {
+      const rhysBc = state.battlefield.find(b => b.deckCardIndex === rhysDeckIndex);
+      if (!rhysBc) throw new Error('Rhys not on battlefield');
+      // Toggle the double-tokens condition on
+      let s = appReducer(state, { type: 'TOGGLE_CONDITION', payload: { instanceId: rhysBc.instanceId, tokenName: 'Double all creature tokens' } });
+      // Trigger the ability
+      s = appReducer(s, { type: 'TRIGGER_CARD', payload: { deckCardIndex: rhysDeckIndex } });
+      return s;
+    }
+
+    it('doubling with no creature tokens does nothing', () => {
+      const rhys = makeRhys();
+      const deckCards = [rhys];
+      let state = stateWith({ deckCards });
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 0 } });
+
+      // Rhys has isConditional tokens, so PLAY_CARD should not auto-create tokens.
+      state = toggleAndTriggerRhysDouble(state, 0);
+      expect(state.standaloneTokens.length).toBe(0);
+    });
+
+    it('doubles all existing creature tokens', () => {
+      const soldier = makeDeckCard('Soldier Maker');
+      const rhys = makeRhys();
+      const deckCards = [soldier, rhys];
+      let state = stateWith({ deckCards });
+
+      // Play Soldier Maker → creates 1 Soldier token
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 0 } });
+      expect(totalTokenCount(state.standaloneTokens, 'Soldier')).toBe(1);
+
+      // Play Rhys
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 1 } });
+
+      // Trigger Rhys double-tokens → 1 Soldier becomes 1+1=2
+      state = toggleAndTriggerRhysDouble(state, 1);
+      expect(totalTokenCount(state.standaloneTokens, 'Soldier')).toBe(2);
+    });
+
+    it('doubles multiple different creature tokens', () => {
+      const soldierMaker = makeDeckCard('Soldier Maker');
+      const multiMaker = makeMultiTokenGenerator(3, 'Goblin');
+      const rhys = makeRhys();
+      const deckCards = [soldierMaker, multiMaker, rhys];
+      let state = stateWith({ deckCards });
+
+      // Play Soldier Maker → 1 Soldier
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 0 } });
+      // Play Multi Token Maker → 3 Goblins
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 1 } });
+      // Play Rhys
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 2 } });
+
+      // Trigger Rhys → doubles all creature tokens
+      state = toggleAndTriggerRhysDouble(state, 2);
+      expect(totalTokenCount(state.standaloneTokens, 'Soldier')).toBe(2);
+      expect(totalTokenCount(state.standaloneTokens, 'Goblin')).toBe(6);
+    });
+
+    it('doubling with Chatterfang creates companion squirrels', () => {
+      const soldierMaker = makeDeckCard('Soldier Maker');
+      const chatterfang = makeChatterfang();
+      const rhys = makeRhys();
+      const deckCards = [soldierMaker, chatterfang, rhys];
+      let state = stateWith({ deckCards });
+
+      // Play Soldier Maker → 1 Soldier (no Chatterfang yet)
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 0 } });
+      // Play Chatterfang
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 1 } });
+      // Play Rhys
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 2 } });
+
+      const soldiersBeforeDouble = totalTokenCount(state.standaloneTokens, 'Soldier');
+      const squirrelsBeforeDouble = totalTokenCount(state.standaloneTokens, 'Squirrel');
+
+      // Trigger Rhys double → copies all creature tokens, Chatterfang sees them
+      state = toggleAndTriggerRhysDouble(state, 2);
+
+      const totalCreatureCopies = soldiersBeforeDouble + squirrelsBeforeDouble;
+      // Doubled creatures + Chatterfang squirrels for the doubled amount
+      expect(totalTokenCount(state.standaloneTokens, 'Soldier')).toBe(soldiersBeforeDouble * 2);
+      expect(totalTokenCount(state.standaloneTokens, 'Squirrel')).toBe(
+        squirrelsBeforeDouble * 2 + totalCreatureCopies
+      );
+    });
+
+    it('does not double non-creature tokens (Treasure, Food, Clue)', () => {
+      const treasureMaker = makeTreasureGenerator();
+      const rhys = makeRhys();
+      const deckCards = [treasureMaker, rhys];
+      let state = stateWith({ deckCards });
+
+      // Play Treasure Maker → 1 Treasure
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 0 } });
+      expect(totalTokenCount(state.standaloneTokens, 'Treasure')).toBe(1);
+
+      // Play Rhys
+      state = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 1 } });
+
+      // Trigger Rhys double → no creature tokens, so nothing doubles
+      state = toggleAndTriggerRhysDouble(state, 1);
+      expect(totalTokenCount(state.standaloneTokens, 'Treasure')).toBe(1);
+      expect(state.standaloneTokens.length).toBe(1);
+    });
+  });
 });

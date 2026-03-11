@@ -27,11 +27,12 @@ describe('Rhys the Redeemed', () => {
     expect(elfWarrior).toBeDefined();
   });
 
-  it('detects the copy-all-tokens ability', () => {
+  it('detects the double-all-tokens ability', () => {
     const tokens = detectTokens(card);
-    const copy = tokens.find(t => t.name.toLowerCase().includes('copy'));
-    expect(copy).toBeDefined();
-    expect(copy!.isConditional).toBe(true);
+    const doubler = tokens.find(t => t.name.toLowerCase().includes('double'));
+    expect(doubler).toBeDefined();
+    expect(doubler!.isConditional).toBe(true);
+    expect(doubler!.countMode).toBe('double-tokens');
   });
 
   it('is detected as a tap trigger', () => {

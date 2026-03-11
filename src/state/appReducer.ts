@@ -383,6 +383,36 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const undoStack = pushUndo(state);
       const bc = state.battlefield.find(b => b.deckCardIndex === deckCardIndex);
       const activeCard = resolveActiveCard(deckCard, bc?.conditionsMet ?? {}, state.battlefield, deckCardIndex, bc?.counters);
+
+      // Handle "double all creature tokens" (e.g., Rhys the Redeemed's second ability)
+      const hasDoubleTokens = activeCard.tokens.some(t => t.countMode === 'double-tokens');
+      if (hasDoubleTokens) {
+        const creatureTokens = state.standaloneTokens.filter(t => t.tokenDef.types.includes('creature'));
+        if (creatureTokens.length === 0) return state;
+
+        // Create a copy of each creature token with the same count
+        const doubled: StandaloneToken[] = creatureTokens.map(t => ({
+          id: crypto.randomUUID(),
+          tokenDef: t.tokenDef,
+          tokenArt: t.tokenArt,
+          finalCount: t.finalCount,
+          breakdown: `${t.finalCount} (copy of ${t.tokenDef.name})`,
+          sourceName: deckCard.scryfallData.name,
+          copyOfDeckIndex: t.copyOfDeckIndex,
+          createdOnTurn: state.currentTurn,
+        }));
+
+        // Companion tokens (e.g., Chatterfang sees all the new copies)
+        const companionTokens = createCompanionTokens(state, doubled, deckCardIndex);
+
+        return {
+          ...state,
+          standaloneTokens: [...state.standaloneTokens, ...doubled, ...companionTokens],
+          undoStack,
+          history: addHistory(state, `Triggered ${deckCard.scryfallData.name} (doubled tokens)`),
+        };
+      }
+
       const supportCards = getSupportCards(state);
       const results = calculateTokens(activeCard, supportCards, xValue ?? 1);
       const newTokens = createStandaloneTokens(results, deckCard.scryfallData.name, deckCardIndex, state.currentTurn);

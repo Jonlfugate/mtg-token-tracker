@@ -210,22 +210,21 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
     let copyMatch;
     while ((copyMatch = COPY_TOKEN_REGEX.exec(ability)) !== null) {
       const rawCopyOf = copyMatch[1].trim();
-      // "For each creature token...copy of that creature" is a mass-populate effect
-      // Detect this and flag the card as having populate instead of skipping
+      // "For each creature token...copy of that creature" — doubles all creature tokens
+      // (e.g., Rhys the Redeemed's second ability)
       if (/\b(?:for each|each)\b.*\bcreature token\b/i.test(ability) && /\b(?:that creature)\b/i.test(rawCopyOf)) {
-        // Mark as populate-style ability — handled by the populate system
-        // We'll set a flag that the import hook can read
-        if (!seen.has('_mass_populate')) {
-          seen.add('_mass_populate');
+        if (!seen.has('_double_tokens')) {
+          seen.add('_double_tokens');
           tokens.push({
-            count: -1,
+            count: 0,
             power: '', toughness: '', colors: [],
-            name: 'Copy tokens',
+            name: 'Double all creature tokens',
             types: ['creature'],
             keywords: [],
             rawText: ability.trim(),
             isConditional: true,
-            condition: 'Copy tokens',
+            condition: 'Double all creature tokens',
+            countMode: 'double-tokens',
           });
         }
         continue;
