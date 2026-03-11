@@ -16,9 +16,10 @@ const TRIGGER_PATTERNS: TriggerPattern[] = [
   { regex: /landfall/i, type: 'landfall', label: 'Landfall' },
   { regex: /at the beginning of (?:each|your) upkeep/i, type: 'upkeep', label: 'Upkeep' },
   { regex: /at the beginning of (?:each|your) (?:end step|first main phase)/i, type: 'upkeep', label: 'End Step' },
-  { regex: /whenever.*(?:attacks|enters .* attacking)/i, type: 'combat', label: 'Attack' },
-  { regex: /whenever.*deals combat damage/i, type: 'combat', label: 'Combat Damage' },
-  { regex: /whenever.*dies/i, type: 'death', label: 'Death' },
+  { regex: /at the beginning of combat/i, type: 'combat', label: 'Combat' },
+  { regex: /whenever.*(?:attacks?|enters .* attacking)/i, type: 'combat', label: 'Attack' },
+  { regex: /whenever.*deals? combat damage/i, type: 'combat', label: 'Combat Damage' },
+  { regex: /when(?:ever)?.*dies/i, type: 'death', label: 'Death' },
   { regex: /whenever.*(?:put into (?:a |your )?graveyard|sacrifice)/i, type: 'other', label: 'Graveyard' },
   { regex: /whenever you cast/i, type: 'cast', label: 'Cast' },
   { regex: /whenever (?:a|another).*(?:enters|enters the battlefield)/i, type: 'other', label: 'Trigger' },
@@ -32,9 +33,11 @@ export function detectTriggerType(card: ScryfallCard): { type: TriggerType; labe
   const abilities = splitAbilities(card);
 
   // Find ability line indices that create tokens or populate
+  // Strip reminder text in parentheses to avoid false matches
   const tokenLineIndices: number[] = [];
   for (let i = 0; i < abilities.length; i++) {
-    if (TOKEN_LINE_RE.test(abilities[i])) {
+    const stripped = abilities[i].replace(/\([^)]*\)/g, '');
+    if (TOKEN_LINE_RE.test(stripped)) {
       tokenLineIndices.push(i);
     }
   }
@@ -53,7 +56,7 @@ export function detectTriggerType(card: ScryfallCard): { type: TriggerType; labe
   // (handles modal abilities where "Landfall — ... choose one —" is on one line
   // and "• Create a token" is on the next)
   for (const idx of tokenLineIndices) {
-    const line = abilities[idx];
+    const line = abilities[idx].replace(/\([^)]*\)/g, '');
 
     // Detect dual triggers like "enters the battlefield or attacks"
     const alsoEtb = /enters.*(?:or|and)\s+attacks/i.test(line) || /attacks.*(?:or|and)\s+enters/i.test(line);

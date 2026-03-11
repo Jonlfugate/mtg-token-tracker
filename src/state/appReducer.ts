@@ -96,8 +96,53 @@ function shouldTriggerOnPlay(card: DeckCard): boolean {
     isInstantOrSorcery(card) ||
     card.triggerInfo?.type === 'etb' ||
     card.triggerInfo?.alsoEtb === true ||
-    !card.triggerInfo // no detected trigger = one-shot effect
+    (!card.triggerInfo && !card.supportEffect) // no trigger + no support = one-shot effect
   );
+}
+
+/**
+ * Create companion tokens (e.g., Chatterfang Squirrels) whenever other tokens are created.
+ * Returns additional standalone tokens for each companion-effect card on the battlefield.
+ */
+function createCompanionTokens(
+  state: AppState,
+  newTokens: StandaloneToken[],
+  sourceCardIndex?: number,
+): StandaloneToken[] {
+  if (newTokens.length === 0) return [];
+
+  const companionTokens: StandaloneToken[] = [];
+  const totalTokensCreated = newTokens.reduce((sum, t) => sum + t.finalCount, 0);
+
+  for (const bc of state.battlefield) {
+    const card = state.deckCards[bc.deckCardIndex];
+    if (!card.supportEffect || card.supportEffect.type !== 'companion') continue;
+    // Don't trigger from own token creation (prevent infinite loops)
+    if (bc.deckCardIndex === sourceCardIndex) continue;
+
+    // Find the companion's own token definition (e.g., Chatterfang's Squirrel)
+    if (card.tokens.length === 0) continue;
+    const companionTokenDef = card.tokens[0]; // Use first token definition
+
+    // Apply support multipliers to companion tokens too
+    const supportCards = state.battlefield
+      .map(b => state.deckCards[b.deckCardIndex])
+      .filter(c => (c.category === 'support' || c.category === 'both') && c.supportEffect?.type !== 'companion');
+
+    const companionCard: DeckCard = {
+      ...card,
+      tokens: [{ ...companionTokenDef, count: totalTokensCreated }],
+    };
+    const results = calculateTokens(companionCard, supportCards);
+    companionTokens.push(...createStandaloneTokens(
+      results,
+      card.scryfallData.name,
+      bc.deckCardIndex,
+      state.currentTurn,
+    ));
+  }
+
+  return companionTokens;
 }
 
 /** Convert TokenCalculationResults into StandaloneTokens */
@@ -228,6 +273,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         }
       }
 
+      // Create companion tokens (e.g., Chatterfang Squirrels)
+      const justCreated = newStandaloneTokens.slice(state.standaloneTokens.length);
+      const companionTokens = createCompanionTokens(state, justCreated, deckCardIndex);
+      newStandaloneTokens = [...newStandaloneTokens, ...companionTokens];
+
       // Check if this card triggers populate on play
       const shouldPopulateNow = deckCard.hasPopulate && shouldTriggerOnPlay(deckCard);
       const populateAdd = shouldPopulateNow ? 1 : 0;
@@ -271,9 +321,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const results = calculateTokens(activeCard, supportCards, xValue ?? 1);
       const newTokens = createStandaloneTokens(results, deckCard.scryfallData.name, deckCardIndex, state.currentTurn);
 
+      // Create companion tokens (e.g., Chatterfang Squirrels)
+      const companionTokens = createCompanionTokens(state, newTokens, deckCardIndex);
+
       return {
         ...state,
-        standaloneTokens: [...state.standaloneTokens, ...newTokens],
+        standaloneTokens: [...state.standaloneTokens, ...newTokens, ...companionTokens],
         pendingPopulate: state.pendingPopulate + (deckCard.hasPopulate ? 1 : 0),
         undoStack,
         history: addHistory(state, `Triggered ${deckCard.scryfallData.name}`),
@@ -328,6 +381,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         const card = state.deckCards[bc.deckCardIndex];
         return card.hasPopulate && card.triggerInfo && triggerTypes.includes(card.triggerInfo.type);
       }).length;
+
+      // Create companion tokens (e.g., Chatterfang Squirrels)
+      const companionTokens = createCompanionTokens(state, allNewTokens);
+      allNewTokens.push(...companionTokens);
 
       if (allNewTokens.length === 0 && populateCount === 0 && xTriggerQueue.length === 0) return state;
 

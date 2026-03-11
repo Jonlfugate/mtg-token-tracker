@@ -3,7 +3,7 @@ import { getOracleText } from './cardUtils';
 
 interface SupportPattern {
   regex: RegExp;
-  type: 'multiplier' | 'additional';
+  type: 'multiplier' | 'additional' | 'companion';
   factor: number;
   condition?: string;
 }
@@ -19,10 +19,16 @@ const SUPPORT_PATTERNS: SupportPattern[] = [
   { regex: /token.*that\s+many\s+plus\s+one/i, type: 'additional', factor: 1 },
   // "plus one additional"
   { regex: /plus\s+one\s+additional/i, type: 'additional', factor: 1 },
-  // "create one additional copy" / "an additional token"
-  { regex: /an?\s+additional\s+(?:copy|token)/i, type: 'additional', factor: 1 },
-  // "plus that many" (e.g. creates double)
+  // "create one additional copy" / "an additional token" / "an additional Treasure token"
+  { regex: /an?\s+additional\s+\w*\s*(?:copy|token)/i, type: 'additional', factor: 1 },
+  // "plus that many" (e.g. creates those tokens plus that many Squirrel tokens)
+  { regex: /plus\s+that\s+many/i, type: 'additional', factor: 1 },
+  // "creates double"
   { regex: /creates?\s+(?:that\s+many\s+tokens?\s+)?plus\s+that\s+many/i, type: 'multiplier', factor: 2 },
+  // "also create that many" (Chatterfang — whenever you create tokens, also create Squirrels)
+  { regex: /also\s+create\s+that\s+many/i, type: 'companion', factor: 1 },
+  // "instead create one of each" (Academy Manufactor — Clue/Food/Treasure replacement)
+  { regex: /instead\s+create\s+one\s+of\s+each/i, type: 'additional', factor: 2 },
 ];
 
 export function detectSupport(card: ScryfallCard): SupportEffect | undefined {

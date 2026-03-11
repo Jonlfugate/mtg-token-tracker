@@ -25,6 +25,9 @@ export function calculateTokens(
     for (const support of sortedSupport) {
       const effect = support.supportEffect!;
 
+      // Skip companion effects — handled in the reducer (e.g., Chatterfang creates separate tokens)
+      if (effect.type === 'companion') continue;
+
       // Check condition match (e.g., "creature tokens" only)
       if (effect.condition === 'creature tokens' && !tokenDef.types.includes('creature')) {
         continue;

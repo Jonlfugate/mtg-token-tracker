@@ -50,7 +50,7 @@ function groupByType(cards: Array<{ card: DeckCard; index: number }>): TypeGroup
 export function DeckList() {
   const { state, dispatch } = useAppContext();
   const { deckCards, battlefield } = state;
-  const [playValues, setPlayValues] = useState<Record<number, number>>({});
+  const [playValues, setPlayValues] = useState<Record<number, string>>({});
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   const generators = useMemo(() =>
@@ -89,11 +89,10 @@ export function DeckList() {
     return deckCards[index].tokens.some(t => t.countMode === 'counters');
   };
 
-  const getPlayValue = (index: number) => playValues[index] ?? 1;
-
-  const setPlayValue = (index: number, value: number) => {
-    const min = needsCounters(index) ? 0 : 1;
-    setPlayValues(prev => ({ ...prev, [index]: Math.max(min, value) }));
+  const getPlayValue = (index: number): number => {
+    const raw = playValues[index];
+    if (raw === undefined || raw === '') return needsCounters(index) ? 0 : 1;
+    return parseInt(raw, 10) || (needsCounters(index) ? 0 : 1);
   };
 
   const handlePlay = (deckCardIndex: number) => {
@@ -111,10 +110,15 @@ export function DeckList() {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const getInputLabel = (card: DeckCard, index: number): string => {
+    if (needsCounters(index)) return 'Counters';
+    if (card.tokens.some(t => t.count === -1)) return 'X';
+    return 'Qty';
+  };
+
   const renderCardRow = (card: DeckCard, index: number) => {
-    const usesX = needsXOnPlay(index);
     const usesCounters = needsCounters(index);
-    const inputLabel = usesX ? 'X value' : usesCounters ? 'Counters' : 'Qty';
+    const inputLabel = getInputLabel(card, index);
     return (
       <CardRow
         key={index}
@@ -128,9 +132,9 @@ export function DeckList() {
           type="number"
           className="play-value-input"
           min={usesCounters ? 0 : 1}
-          value={getPlayValue(index)}
-          onChange={(e) => setPlayValue(index, parseInt(e.target.value) || (usesCounters ? 0 : 1))}
-          onFocus={(e) => e.target.select()}
+          placeholder={inputLabel}
+          value={playValues[index] ?? ''}
+          onChange={(e) => setPlayValues(prev => ({ ...prev, [index]: e.target.value }))}
           title={inputLabel}
           aria-label={inputLabel}
         />

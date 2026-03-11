@@ -127,10 +127,10 @@ describe('detectTokens', () => {
 
   describe('copy tokens', () => {
     it('detects "create a token that\'s a copy of"', () => {
-      const card = makeCard('Create a token that\'s a copy of target creature.', 'Clone Guy');
+      const card = makeCard('Create a token that\'s a copy of it.', 'Clone Guy');
       const tokens = detectTokens(card);
       expect(tokens).toHaveLength(1);
-      expect(tokens[0].name).toMatch(/^Copy of/);
+      expect(tokens[0].name).toBe('Copy of Clone Guy');
     });
 
     it('handles self-referential copy ("copy of itself")', () => {
@@ -226,6 +226,17 @@ describe('detectTokens', () => {
       };
       const tokens = detectTokens(card);
       expect(tokens).toHaveLength(1);
+    });
+  });
+
+  describe('replacement effect cards', () => {
+    it('returns empty for Academy Manufactor (replacement effect, not a generator)', () => {
+      const card = makeCard(
+        'If you would create a Clue, Food, or Treasure token, instead create one of each of those tokens.',
+        'Academy Manufactor'
+      );
+      const tokens = detectTokens(card);
+      expect(tokens).toHaveLength(0);
     });
   });
 

@@ -74,7 +74,7 @@ export interface TokenDefinition {
 }
 
 export interface SupportEffect {
-  type: 'multiplier' | 'additional';
+  type: 'multiplier' | 'additional' | 'companion';
   factor: number;
   condition?: string;
   rawText: string;

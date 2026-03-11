@@ -43,4 +43,24 @@ describe('detectSupport', () => {
     const result = detectSupport(card);
     expect(result).toBeUndefined();
   });
+
+  it('detects Academy Manufactor as additional support with factor 2', () => {
+    const card = makeCard(
+      'If you would create a Clue, Food, or Treasure token, instead create one of each of those tokens.'
+    );
+    const result = detectSupport(card);
+    expect(result).toBeDefined();
+    expect(result!.type).toBe('additional');
+    expect(result!.factor).toBe(2);
+  });
+
+  it('detects Chatterfang as companion support with factor 1', () => {
+    const card = makeCard(
+      'Forestwalk\nWhenever you create one or more tokens, also create that many 1/1 green Squirrel creature tokens.\n{B}, Sacrifice X Squirrels: Target creature gets +X/-X until end of turn.'
+    );
+    const result = detectSupport(card);
+    expect(result).toBeDefined();
+    expect(result!.type).toBe('companion');
+    expect(result!.factor).toBe(1);
+  });
 });

@@ -190,6 +190,10 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
   // Detect if this card has a modal "choose one" pattern
   const isModal = /choose\s+one\s*(?:—|:|\.| or\s+both| or\s+more| that\s+hasn)/i.test(oracleText);
 
+  // Detect if this card is purely a replacement effect (modifies other token creation)
+  const isReplacementEffect = /\bif\b.*\bwould\b.*\btokens?\b.*\binstead\b/i.test(oracleText)
+    || /\btokens?\b.*\bwould be created\b.*\binstead\b/i.test(oracleText);
+
   // Process each ability line independently
   // Strip reminder text in parentheses to avoid double-counting keyword mechanics
   for (const rawAbility of abilities) {
@@ -199,7 +203,10 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
     COPY_TOKEN_REGEX.lastIndex = 0;
     let copyMatch;
     while ((copyMatch = COPY_TOKEN_REGEX.exec(ability)) !== null) {
-      const copyOf = copyMatch[1].trim().replace(/\b(?:this creature|itself|it)\b/i, card.name);
+      const rawCopyOf = copyMatch[1].trim();
+      // Skip generic copy effects ("copy of that creature/token") — these copy variable targets
+      if (/\b(?:that creature|that token|each creature|each token|target creature|target)\b/i.test(rawCopyOf)) continue;
+      const copyOf = rawCopyOf.replace(/\b(?:this creature|itself|it)\b/i, card.name);
       // Check if there's a preceding condition
       const textBefore = ability.substring(0, copyMatch.index);
       const ifMatch = textBefore.match(/[Ii]f\s+(.+?),\s*$/);
@@ -386,8 +393,8 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
   }
 
   // If we found no tokens from text but have Scryfall token data and the card
-  // mentions tokens, try matching directly
-  if (tokens.length === 0 && tokenData.length > 0 && /token/i.test(oracleText)) {
+  // mentions tokens, try matching directly (skip replacement-effect cards)
+  if (tokens.length === 0 && tokenData.length > 0 && /token/i.test(oracleText) && !isReplacementEffect) {
     for (const td of tokenData) {
       // Verify this token's name appears somewhere in the oracle text
       const nameHint = td.name.toLowerCase();
