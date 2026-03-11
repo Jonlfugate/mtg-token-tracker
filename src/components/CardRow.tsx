@@ -104,9 +104,6 @@ export const CardRow = memo(function CardRow({
     touchPopup.handlers.onClick(e);
   }, [touchPopup.handlers]);
 
-  // Use the desktop ref for the row element (both popups reference the same row)
-  const rowRef = desktopPopup.ref as React.RefObject<HTMLDivElement>;
-
   // Sync touch popup ref to same element
   const setRefs = useCallback((el: HTMLDivElement | null) => {
     (desktopPopup.ref as React.MutableRefObject<HTMLElement | null>).current = el;
@@ -147,7 +144,7 @@ export const CardRow = memo(function CardRow({
         )}
         {!compact && (
           <span className="card-qty">
-            {showPlayButton ? `${inPlayCount}/${maxQty} in play` : `×${maxQty}`}
+            {showPlayButton ? `${inPlayCount} in play` : `×${card.decklistEntry.quantity}`}
           </span>
         )}
       </div>
