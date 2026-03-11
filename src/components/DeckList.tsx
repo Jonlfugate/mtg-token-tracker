@@ -52,7 +52,6 @@ export function DeckList() {
   const { state, dispatch } = useAppContext();
   const { deckCards, battlefield } = state;
   const [xModalIndex, setXModalIndex] = useState<number | null>(null);
-  const [playQuantities, setPlayQuantities] = useState<Record<number, number>>({});
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   const generators = useMemo(() =>
@@ -77,12 +76,6 @@ export function DeckList() {
   const getInPlayCount = (index: number) =>
     battlefield.filter(b => b.deckCardIndex === index).length;
 
-  const hasSelfCopies = (index: number) =>
-    deckCards[index].tokens.some(t => t.countMode === 'self-copies');
-
-  const getRemaining = (index: number) =>
-    deckCards[index].decklistEntry.quantity - getInPlayCount(index);
-
   const needsXOnPlay = (index: number) => {
     const card = deckCards[index];
     if (card.tokens.some(t => t.countMode === 'self-copies')) return false;
@@ -93,12 +86,10 @@ export function DeckList() {
   };
 
   const handlePlay = (deckCardIndex: number) => {
-    const quantity = playQuantities[deckCardIndex] || 1;
     if (needsXOnPlay(deckCardIndex)) {
       setXModalIndex(deckCardIndex);
     } else {
-      dispatch({ type: 'PLAY_CARD', payload: { deckCardIndex, quantity } });
-      setPlayQuantities(prev => ({ ...prev, [deckCardIndex]: 1 }));
+      dispatch({ type: 'PLAY_CARD', payload: { deckCardIndex } });
     }
   };
 
@@ -109,21 +100,11 @@ export function DeckList() {
     }
   };
 
-  const handleQuantityChange = (index: number, value: number) => {
-    const remaining = getRemaining(index);
-    const clamped = Math.max(1, Math.min(value, remaining));
-    setPlayQuantities(prev => ({ ...prev, [index]: clamped }));
-  };
-
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const renderCardRow = (card: DeckCard, index: number) => {
-    const remaining = getRemaining(index);
-    const showQuantity = hasSelfCopies(index) && remaining > 1;
-    const qty = playQuantities[index] || 1;
-
     return (
       <CardRow
         key={index}
@@ -132,25 +113,7 @@ export function DeckList() {
         onPlay={() => handlePlay(index)}
         showPlayButton
         compact
-      >
-        {showQuantity && (
-          <div className="play-quantity">
-            <label>
-              Play
-              <input
-                type="number"
-                min={1}
-                max={remaining}
-                value={qty}
-                onChange={(e) => handleQuantityChange(index, parseInt(e.target.value, 10) || 1)}
-                onFocus={(e) => e.target.select()}
-                className="quantity-input"
-              />
-              at once
-            </label>
-          </div>
-        )}
-      </CardRow>
+      />
     );
   };
 

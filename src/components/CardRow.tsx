@@ -8,6 +8,7 @@ interface CardRowProps {
   card: DeckCard;
   inPlayCount: number;
   onPlay?: () => void;
+  onAdd?: () => void;
   onRemove?: () => void;
   showPlayButton?: boolean;
   showRemoveButton?: boolean;
@@ -81,15 +82,13 @@ function TokenThumb({ tokenDef, thumbUrl, popupUrl }: { tokenDef: TokenDefinitio
 
 export const CardRow = memo(function CardRow({
   card, inPlayCount,
-  onPlay, onRemove, showPlayButton, showRemoveButton, extraLabel,
+  onPlay, onAdd, onRemove, showPlayButton, showRemoveButton, extraLabel,
   onTrigger, triggerLabel,
   conditions, onToggleCondition, children,
   compact,
 }: CardRowProps) {
   const imageUri = getImageUri(card);
   const artCropUri = getArtCropUri(card);
-  const maxQty = card.decklistEntry.quantity;
-  const canPlay = inPlayCount < maxQty;
 
   // Desktop: side popup. Touch: below popup.
   const desktopPopup = usePopup({ popupWidth: 260, popupHeight: 350, placement: 'side' });
@@ -214,17 +213,22 @@ export const CardRow = memo(function CardRow({
           </button>
         )}
         {showPlayButton && (
-          <div className="play-btn-group">
-            <button onClick={onPlay} disabled={!canPlay} className="play-btn">
-              Play
-            </button>
-            <span className="play-counter">{inPlayCount}/{maxQty}</span>
-          </div>
+          <button onClick={onPlay} className="play-btn">
+            Play
+          </button>
         )}
         {showRemoveButton && (
-          <button onClick={onRemove} className="remove-btn">
-            Remove
-          </button>
+          <div className="card-adjust-btns">
+            <button onClick={onRemove} className="card-adjust-btn" title="Remove one">
+              &minus;
+            </button>
+            <span className="card-adjust-count">{inPlayCount}</span>
+            {onAdd && (
+              <button onClick={onAdd} className="card-adjust-btn" title="Add one">
+                +
+              </button>
+            )}
+          </div>
         )}
       </div>
 

@@ -78,6 +78,14 @@ export function Battlefield() {
     dispatch({ type: 'REMOVE_CARD', payload: { instanceId } });
   }, [dispatch]);
 
+  const handleAddCard = useCallback((deckCardIndex: number) => {
+    dispatch({ type: 'PLAY_CARD', payload: { deckCardIndex } });
+  }, [dispatch]);
+
+  const handleClearBattlefield = useCallback(() => {
+    dispatch({ type: 'CLEAR_BATTLEFIELD' });
+  }, [dispatch]);
+
   const handleRemoveToken = useCallback((id: string) => {
     dispatch({ type: 'REMOVE_STANDALONE_TOKEN', payload: { id } });
   }, [dispatch]);
@@ -250,6 +258,13 @@ export function Battlefield() {
           >
             {showHistory ? 'Hide Log' : 'Log'}
           </button>
+          <button
+            className="bulk-clear-btn danger"
+            onClick={handleClearBattlefield}
+            title="Clear all cards and tokens from battlefield"
+          >
+            Clear All
+          </button>
         </div>
       </div>
 
@@ -293,30 +308,36 @@ export function Battlefield() {
                 const triggerLabel = card.triggerInfo?.label;
                 const conditionalTokens = card.tokens.filter(t => t.isConditional);
 
-                return instanceIds.map(instanceId => {
-                  const bc = battlefield.find(b => b.instanceId === instanceId);
-                  const conditionsMet = bc?.conditionsMet ?? {};
-                  const conditions = conditionalTokens.map(t => ({
-                    tokenName: t.name,
-                    label: t.condition || t.name,
-                    checked: conditionsMet[t.name] ?? false,
-                  }));
+                // Use the first instance for conditions
+                const firstBc = battlefield.find(b => b.instanceId === instanceIds[0]);
+                const conditionsMet = firstBc?.conditionsMet ?? {};
+                const conditions = conditionalTokens.map(t => ({
+                  tokenName: t.name,
+                  label: t.condition || t.name,
+                  checked: conditionsMet[t.name] ?? false,
+                }));
 
-                  return (
-                    <CardRow
-                      key={instanceId}
-                      card={card}
-                      inPlayCount={instanceIds.length}
-                      onRemove={() => handleRemoveCard(instanceId)}
-                      showRemoveButton
-                      onTrigger={isGenerator ? () => handleTrigger(deckIdx) : undefined}
-                      triggerLabel={triggerLabel}
-                      conditions={conditions}
-                      onToggleCondition={(tokenName) => dispatch({ type: 'TOGGLE_CONDITION', payload: { instanceId, tokenName } })}
-                      compact
-                    />
-                  );
-                });
+                // Show one grouped row with count and -/+ controls
+                return (
+                  <CardRow
+                    key={deckIdx}
+                    card={card}
+                    inPlayCount={instanceIds.length}
+                    onRemove={() => handleRemoveCard(instanceIds[instanceIds.length - 1])}
+                    onAdd={() => handleAddCard(deckIdx)}
+                    showRemoveButton
+                    onTrigger={isGenerator ? () => handleTrigger(deckIdx) : undefined}
+                    triggerLabel={triggerLabel}
+                    conditions={conditions}
+                    onToggleCondition={(tokenName) => {
+                      // Toggle condition on all instances
+                      for (const id of instanceIds) {
+                        dispatch({ type: 'TOGGLE_CONDITION', payload: { instanceId: id, tokenName } });
+                      }
+                    }}
+                    compact
+                  />
+                );
               })}
             </div>
           ))}

@@ -153,12 +153,12 @@ button:disabled {
   cursor: not-allowed;
 }
 
-button:not(.secondary):not(.danger):not(.play-btn):not(.remove-btn) {
+button:not(.secondary):not(.danger):not(.play-btn):not(.card-adjust-btn) {
   background: #8b5cf6;
   color: white;
 }
 
-button:not(.secondary):not(.danger):not(.play-btn):not(.remove-btn):hover:not(:disabled) {
+button:not(.secondary):not(.danger):not(.play-btn):not(.card-adjust-btn):hover:not(:disabled) {
   background: #7c3aed;
 }
 
@@ -180,19 +180,6 @@ button.danger:hover:not(:disabled) {
   background: #b91c1c;
 }
 
-.play-btn-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.1rem;
-}
-
-.play-counter {
-  font-size: 0.65rem;
-  color: #888;
-  font-weight: 600;
-}
-
 .play-btn {
   background: #059669;
   color: white;
@@ -204,35 +191,40 @@ button.danger:hover:not(:disabled) {
   background: #047857;
 }
 
-.play-quantity {
+.card-adjust-btns {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.85rem;
-  color: #ccc;
 }
 
-.quantity-input {
-  width: 3rem;
-  padding: 0.15rem 0.25rem;
-  text-align: center;
-  background: #2a2a2a;
+.card-adjust-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   border: 1px solid #555;
-  border-radius: 4px;
-  color: #fff;
-  font-size: 0.85rem;
-  margin: 0 0.25rem;
+  background: #2a2a3e;
+  color: #e0e0e0;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
 }
 
-.remove-btn {
-  background: #dc2626;
-  color: white;
-  padding: 0.25rem 0.75rem;
-  font-size: 0.8rem;
+.card-adjust-btn:hover {
+  background: #3a3a5e;
+  border-color: #888;
 }
 
-.remove-btn:hover:not(:disabled) {
-  background: #b91c1c;
+.card-adjust-count {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #e0e0e0;
+  min-width: 1.5rem;
+  text-align: center;
 }
 
 .trigger-btn {
@@ -1230,8 +1222,13 @@ button.danger:hover:not(:disabled) {
     font-size: 0.8rem;
   }
 
-  .play-btn, .remove-btn, .trigger-btn {
+  .play-btn, .trigger-btn, .card-adjust-btn {
     min-height: 36px;
+  }
+
+  .card-adjust-btn {
+    width: 36px;
+    height: 36px;
   }
 
   .condition-toggle {

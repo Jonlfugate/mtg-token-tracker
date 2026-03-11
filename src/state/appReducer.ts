@@ -130,6 +130,7 @@ export type AppAction =
   | { type: 'NEW_TURN' }
   | { type: 'CLEAR_ALL_TOKENS' }
   | { type: 'CLEAR_TURN_TOKENS' }
+  | { type: 'CLEAR_BATTLEFIELD' }
   | { type: 'RESET' }
   | { type: 'UNDO' }
   | { type: 'LOAD_STATE'; payload: AppState };
@@ -233,17 +234,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       }
 
       // Permanents go to the battlefield
-      const inPlayCount = state.battlefield.filter(b => b.deckCardIndex === deckCardIndex).length;
-      if (inPlayCount + quantity > deckCard.decklistEntry.quantity) {
-        return {
-          ...state,
-          standaloneTokens: newStandaloneTokens,
-          pendingPopulate: state.pendingPopulate + populateAdd,
-          undoStack,
-          history: addHistory(state, histLabel),
-        };
-      }
-
       const newCards: BattlefieldCard[] = [];
       for (let i = 0; i < quantity; i++) {
         newCards.push({ instanceId: crypto.randomUUID(), deckCardIndex, xValue });
@@ -426,6 +416,20 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         standaloneTokens: state.standaloneTokens.filter(t => t.createdOnTurn !== state.currentTurn),
         undoStack,
         history: addHistory(state, `Cleared turn ${state.currentTurn} tokens`),
+      };
+    }
+
+    case 'CLEAR_BATTLEFIELD': {
+      if (state.battlefield.length === 0 && state.standaloneTokens.length === 0) return state;
+      const undoStack = pushUndo(state);
+      return {
+        ...state,
+        battlefield: [],
+        standaloneTokens: [],
+        pendingPopulate: 0,
+        pendingXTriggers: [],
+        undoStack,
+        history: addHistory(state, 'Cleared battlefield'),
       };
     }
 
