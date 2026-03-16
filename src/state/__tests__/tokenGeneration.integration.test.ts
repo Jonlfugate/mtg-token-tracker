@@ -739,13 +739,18 @@ describe('Token Generation Integration Tests', () => {
       });
       const next = appReducer(state, { type: 'PLAY_CARD', payload: { deckCardIndex: 0 } });
 
-      // Base: 1 Treasure, doubled → 2
-      // Manufactor: Clue & Food each with finalCount=2, doubled → 4 each
-      // Chatterfang: sees 2+4+4 = 10 tokens total → 10 Squirrels, doubled → 20
+      // Base: 1 Treasure → doubled by DS → 2 Treasure
+      // Manufactor: replacement effect fires at same time as DS.
+      //   Clue and Food match the Treasure finalCount (2 each) — no further doubling.
+      // Chatterfang: sees 2T + 2C + 2F = 6 total → 6 Squirrels → doubled by DS → 12
       const treasureCount = totalTokenCount(next.standaloneTokens, 'Treasure');
+      const clueCount = totalTokenCount(next.standaloneTokens, 'Clue');
+      const foodCount = totalTokenCount(next.standaloneTokens, 'Food');
       const squirrelCount = totalTokenCount(next.standaloneTokens, 'Squirrel');
       expect(treasureCount).toBe(2);
-      expect(squirrelCount).toBeGreaterThanOrEqual(10); // At minimum based on all tokens
+      expect(clueCount).toBe(2);
+      expect(foodCount).toBe(2);
+      expect(squirrelCount).toBe(12);
     });
   });
 

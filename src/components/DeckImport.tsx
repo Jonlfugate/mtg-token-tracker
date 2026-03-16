@@ -72,7 +72,7 @@ const EXAMPLE_DECK = `4 Hare Apparent (MKM) 14
 1 Gilded Goose
 1 Not Dead After All`;
 
-export function DeckImport({ onDeckLoaded }: { onDeckLoaded?: () => void }) {
+export function DeckImport({ onDeckLoaded, onStartTutorial }: { onDeckLoaded?: () => void; onStartTutorial?: () => void }) {
   const [text, setText] = useState('');
   const { importDeck } = useDeckImport();
   const { state, dispatch } = useAppContext();
@@ -93,7 +93,18 @@ export function DeckImport({ onDeckLoaded }: { onDeckLoaded?: () => void }) {
   return (
     <div className="deck-import">
       <h2>Import Decklist</h2>
-      <p className="hint">Paste your decklist from Moxfield (format: "1 Card Name" per line)</p>
+      {state.importStatus === 'idle' && (
+        <div className="onboarding-blurb">
+          <p>Track token generation for your Magic: The Gathering deck. Paste your decklist, play cards, and see exactly what tokens you'll create — including support effects like Doubling Season and Chatterfang.</p>
+          <p>Supports Moxfield export format or plain <code>1 Card Name</code> per line.</p>
+          {onStartTutorial && (
+            <button className="tutorial-start-btn" onClick={onStartTutorial}>
+              Start Tutorial
+            </button>
+          )}
+        </div>
+      )}
+      <p className="hint">Paste your decklist below (format: "1 Card Name" or "1 Card Name (SET) 123" per line)</p>
       <label htmlFor="decklist-input" className="sr-only">Decklist</label>
       <textarea
         id="decklist-input"

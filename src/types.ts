@@ -1,8 +1,6 @@
 export interface DecklistEntry {
   quantity: number;
   name: string;
-  setCode?: string;
-  collectorNumber?: string;
 }
 
 export interface ScryfallRelatedCard {
@@ -23,13 +21,14 @@ export interface ScryfallCard {
   image_uris?: {
     small: string;
     normal: string;
+    large: string;
     art_crop: string;
     png: string;
   };
   card_faces?: Array<{
     name: string;
     oracle_text: string;
-    image_uris?: { small: string; normal: string; art_crop: string; png: string };
+    image_uris?: { small: string; normal: string; large: string; art_crop: string; png: string };
   }>;
   all_parts?: ScryfallRelatedCard[];
   colors?: string[];
@@ -53,6 +52,7 @@ export interface TokenArt {
   name: string;
   imageUrl: string;  // art_crop
   normalUrl?: string; // full card image (normal)
+  largeUrl?: string;  // full card image (large — higher resolution)
   typeLine: string;
   power?: string;
   toughness?: string;
@@ -74,7 +74,7 @@ export interface TokenDefinition {
   conditionType?: ConditionType; // why this token is conditional
   isConditional?: boolean; // true if this is the conditional version
   isReplacement?: boolean; // true if this replaces the default token ("instead")
-  countMode?: 'self-copies' | 'counters' | 'double-tokens'; // auto-count from battlefield state
+  countMode?: 'self-copies' | 'counters' | 'double-tokens' | 'copy-turn-tokens'; // auto-count from battlefield state
 }
 
 export interface SupportEffect {
@@ -154,4 +154,5 @@ export interface AppState {
   error?: string;
   history: HistoryEntry[];
   undoStack: AppState[];
+  tokenDeaths: Record<string, number>; // token name → creatures killed this turn
 }

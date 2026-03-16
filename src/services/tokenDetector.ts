@@ -16,6 +16,10 @@ const KEYWORDS = [
 const CREATE_TOKEN_REGEX = /[Cc]reates?\s+(.+?\btokens?\b)/g;
 const CONDITION_REGEX = /[Ii]f\s+(.+?),\s+create\s+(.+?\btokens?\b.*?)\s+instead/g;
 const COPY_TOKEN_REGEX = /create\s+a\s+token\s+that(?:'s|\s+is)\s+a\s+copy\s+of\s+(.+?)(?:\s+instead)?(?:[.,]|$)/gi;
+// Replacement effects that create an *additional* persistent token:
+// "those tokens plus (an additional|a) [snippet] are created instead"
+// "instead create those tokens plus (an additional|a) [snippet]"
+const REPLACEMENT_ADDITIONAL_RE = /\bplus\s+(?:an?\s+(?:additional\s+)?)(.+?\btoken\b)/gi;
 
 function parseCount(text: string): number {
   const lower = text.toLowerCase().trim();
@@ -59,7 +63,7 @@ function parseCondition(conditionText: string): string {
 function extractTokenNameHint(snippet: string): string {
   const lower = snippet.toLowerCase();
 
-  // Predefined token types
+  // Predefined artifact token types
   const predefined = [
     'treasure', 'food', 'clue', 'blood', 'map', 'powerstone',
     'junk', 'gold', 'incubator', 'shard', 'rock',
@@ -68,9 +72,18 @@ function extractTokenNameHint(snippet: string): string {
     if (lower.includes(name)) return name;
   }
 
-  // Try to find creature type name from "P/T <color> <name> creature token" pattern
-  const ptNameMatch = snippet.match(/(?:\d+\/\d+|\*\/\*)\s+[\w\s]*?\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:creature|artifact|enchantment)/);
+  // "P/T <color(s)> <Name> [land] creature/artifact token"
+  const ptNameMatch = snippet.match(/(?:\d+\/\d+|\*\/\*)\s+[\w\s]*?\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:land\s+)?(?:creature|artifact|enchantment)/);
   if (ptNameMatch) return ptNameMatch[1];
+
+  // "<Name> creature/artifact token" without explicit P/T (e.g. "a Zombie token", "a Soldier creature token")
+  const typeNameMatch = snippet.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:creature\s+)?(?:artifact\s+)?tokens?\b/);
+  if (typeNameMatch) {
+    const candidate = typeNameMatch[1];
+    const skipWords = new Set(['white', 'blue', 'black', 'red', 'green', 'colorless', 'creature', 'artifact', 'enchantment', 'a', 'an', 'the', 'tapped', 'attacking', 'with']);
+    const lastWord = candidate.split(' ').pop()!.toLowerCase();
+    if (!skipWords.has(lastWord)) return candidate;
+  }
 
   return '';
 }
@@ -113,6 +126,23 @@ function buildTokenDefFromData(data: ScryfallTokenData, count: number, rawText: 
   };
 }
 
+/**
+ * Supplement a parsed TokenDefinition with P/T and colors from Scryfall token data
+ * when the fallback parser couldn't extract them from the oracle text.
+ * Only fills in missing values — never overrides explicit ones.
+ */
+function supplementFromTokenData(def: TokenDefinition, tokenData: ScryfallTokenData[]): void {
+  if (tokenData.length === 0) return;
+  if (def.power && def.toughness && def.colors.length > 0) return; // already complete
+
+  const match = tokenData.find(t => t.name.toLowerCase() === def.name.toLowerCase());
+  if (!match) return;
+
+  if (!def.power && match.power) def.power = match.power;
+  if (!def.toughness && match.toughness) def.toughness = match.toughness;
+  if (def.colors.length === 0 && match.colors.length > 0) def.colors = [...match.colors];
+}
+
 /** Fallback: regex-parse token from text snippet (when no Scryfall data available) */
 function parseTokenSnippetFallback(snippet: string): TokenDefinition | null {
   const lower = snippet.toLowerCase();
@@ -142,7 +172,7 @@ function parseTokenSnippetFallback(snippet: string): TokenDefinition | null {
 
   let name = '';
   const skipWords = new Set([
-    ...COLORS, ...KEYWORDS, 'creature', 'artifact', 'enchantment', 'token', 'tokens',
+    ...COLORS, ...KEYWORDS, 'creature', 'artifact', 'enchantment', 'land', 'token', 'tokens',
     'with', 'and', 'that', 'named', 'has', 'have', 'the', 'a', 'an', 'of',
     'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
     'tapped', 'attacking',
@@ -157,7 +187,7 @@ function parseTokenSnippetFallback(snippet: string): TokenDefinition | null {
   }
 
   if (!name) {
-    const nameMatch = snippet.match(/(\d+\/\d+|\*\/\*)\s+([\w\s]+?)\s+(creature|artifact|enchantment)/i);
+    const nameMatch = snippet.match(/(\d+\/\d+|\*\/\*)\s+([\w\s]+?)\s+(?:land\s+)?(?:creature|artifact|enchantment)/i);
     if (nameMatch) {
       const nameParts = nameMatch[2].trim().split(/\s+/).filter(w => !skipWords.has(w.toLowerCase()));
       name = nameParts.join(' ');
@@ -253,27 +283,61 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
       const textBefore = ability.substring(0, copyMatch.index);
       const ifMatch = textBefore.match(/[Ii]f\s+(.+?),\s*$/);
       const condition = ifMatch ? parseCondition(ifMatch[1]) : undefined;
+      // "instead" must be literally present to be a replacement; "Then if" additive copies are not replacements
+      const isInstead = /\binstead\b/i.test(copyMatch[0]);
+      // "for each token" pattern means this copies all current-turn tokens, not just the card itself
+      const isForEachToken = /for\s+each\s+token/i.test(textBefore);
+      const copyName = isForEachToken ? `Copy of each token (${condition ?? 'conditional'})` : `Copy of ${copyOf}`;
 
       const copyToken: TokenDefinition = {
         count: 1,
         power: '',
         toughness: '',
         colors: [],
-        name: `Copy of ${copyOf}`,
+        name: copyName,
         types: ['creature'],
         keywords: [],
         rawText: copyMatch[0].trim(),
         conditionKey: condition ? `${card.name}-copy-${conditionCounter++}` : undefined,
         condition,
-        conditionType: condition ? 'replacement' : undefined,
+        conditionType: condition ? (isInstead ? 'replacement' : 'board-state') : undefined,
         isConditional: !!condition,
-        isReplacement: !!condition, // "instead" — replaces default token
+        isReplacement: isInstead, // only true when "instead" is literally present
+        countMode: isForEachToken ? 'copy-turn-tokens' : undefined,
       };
 
       const key = `${copyToken.name}-copy`;
       if (!seen.has(key)) {
         seen.add(key);
         tokens.push(copyToken);
+      }
+    }
+
+    // Check for replacement effects that add an extra persistent token:
+    // "those tokens plus (an additional|a) [snippet] are created instead"
+    // "instead create those tokens plus (an additional|a) [snippet]"
+    if (/\binstead\b/i.test(ability) && /\bwould\b/i.test(ability)) {
+      REPLACEMENT_ADDITIONAL_RE.lastIndex = 0;
+      let addMatch;
+      while ((addMatch = REPLACEMENT_ADDITIONAL_RE.exec(ability)) !== null) {
+        const snippet = addMatch[1].trim();
+        const hint = extractTokenNameHint(snippet);
+        const matched = matchTokenData(hint, tokenData);
+        let parsed: TokenDefinition | null;
+        if (matched) {
+          parsed = buildTokenDefFromData(matched, 1, snippet);
+        } else {
+          parsed = parseTokenSnippetFallback(snippet);
+          if (parsed) supplementFromTokenData(parsed, tokenData);
+        }
+        if (parsed) {
+          parsed.count = 1;
+          const key = `${parsed.name}-${parsed.power}/${parsed.toughness}-addl`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            tokens.push(parsed);
+          }
+        }
       }
     }
 
@@ -295,6 +359,7 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
         parsed = buildTokenDefFromData(matched, count, snippet.trim());
       } else {
         parsed = parseTokenSnippetFallback(snippet);
+        if (parsed) supplementFromTokenData(parsed, tokenData);
       }
       if (parsed) {
         parsed.conditionKey = `${card.name}-cond-${conditionCounter++}`;
@@ -320,8 +385,15 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
       const restOfSentence = ability.substring(matchEnd).split(/[.;]/)[0];
       if (/\binstead\b/i.test(restOfSentence)) continue;
 
+      // Skip "create X of those tokens" — a back-reference to an already-detected token, not a new type
+      if (/\bof\s+those\s+tokens?\b/i.test(match[1])) continue;
+
       // Skip "copy of" tokens (handled above)
       if (/copy\s+of/i.test(match[1])) continue;
+
+      // Skip tokens created by an opponent ("target opponent creates")
+      const textBeforeCreate = ability.substring(0, match.index);
+      if (/\bopponent\s+creates?$|\bopponent\b/i.test(textBeforeCreate.trimEnd())) continue;
 
       const snippet = match[1];
       const count = parseCount(snippet.toLowerCase());
@@ -333,6 +405,7 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
         parsed = buildTokenDefFromData(matched, count, snippet.trim());
       } else {
         parsed = parseTokenSnippetFallback(snippet);
+        if (parsed) supplementFromTokenData(parsed, tokenData);
       }
       if (parsed) {
         // Pick up keywords from "with X" clause after "token" (not captured by regex)
@@ -386,6 +459,66 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
           parsed.conditionType = 'board-state';
         }
 
+        // Detect general "if [board-state condition]" preceding the create clause
+        // (e.g., "if you control seven or more lands with different names, create...")
+        if (!parsed.isConditional) {
+          const textBefore = ability.substring(0, match.index);
+          const boardStateMatch = textBefore.match(/,\s*if\s+(.+?),?\s*$/i);
+          if (boardStateMatch) {
+            const condition = parseCondition(boardStateMatch[1].trim());
+            parsed.isConditional = true;
+            parsed.conditionKey = `${card.name}-board-${conditionCounter++}`;
+            parsed.condition = condition;
+            parsed.conditionType = 'board-state';
+          }
+        }
+
+        // Channel abilities are activated from hand (discard cost) — mark as conditional
+        // so the user can choose whether to use the Channel or play it as a land
+        if (!parsed.isConditional && /^channel\s*[—-]/i.test(ability.trim())) {
+          parsed.isConditional = true;
+          parsed.conditionKey = `${card.name}-channel-${conditionCounter++}`;
+          parsed.condition = 'Channel';
+          parsed.conditionType = 'activated-choice';
+        }
+
+        // Detect "create [A] or [B]" player-choice patterns (e.g., Tireless Provisioner).
+        // The regex only captures up to the first "token", so "or [B]" is missed entirely.
+        // If the text immediately after the match is "or [snippet] token(s)", parse the
+        // alternative and mark BOTH tokens as mutually exclusive conditional choices.
+        const orMatch = restOfSentence.match(/^\s+or\s+(.+?\btokens?\b)/i);
+        if (orMatch) {
+          // Mark the current token as a player choice
+          if (!parsed.isConditional) {
+            parsed.isConditional = true;
+            parsed.conditionKey = `${card.name}-or-${conditionCounter++}`;
+            parsed.condition = parsed.name;
+            parsed.conditionType = 'activated-choice';
+          }
+          // Parse the alternative token
+          const altSnippet = orMatch[1].trim();
+          const altHint = extractTokenNameHint(altSnippet);
+          const altMatched = matchTokenData(altHint, tokenData);
+          let altParsed: TokenDefinition | null;
+          if (altMatched) {
+            altParsed = buildTokenDefFromData(altMatched, parseCount(altSnippet.toLowerCase()), altSnippet);
+          } else {
+            altParsed = parseTokenSnippetFallback(altSnippet);
+            if (altParsed) supplementFromTokenData(altParsed, tokenData);
+          }
+          if (altParsed) {
+            altParsed.isConditional = true;
+            altParsed.conditionKey = `${card.name}-or-${conditionCounter++}`;
+            altParsed.condition = altParsed.name;
+            altParsed.conditionType = 'activated-choice';
+            const altKey = `${altParsed.name}-${altParsed.power}/${altParsed.toughness}`;
+            if (!seen.has(altKey)) {
+              seen.add(altKey);
+              tokens.push(altParsed);
+            }
+          }
+        }
+
         const key = `${parsed.name}-${parsed.power}/${parsed.toughness}`;
         if (!seen.has(key)) {
           seen.add(key);
@@ -402,24 +535,27 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
   for (const ability of abilities) {
     // Amass: "amass [Type] N" — creates or grows an Army token
     const amassMatch = ability.match(/\bamass\s+(\w+)\s+(\d+|X)/i);
-    if (amassMatch && !existingNames.has(`${amassMatch[1].toLowerCase()} army`)) {
-      const subtype = amassMatch[1]; // e.g., "Orcs", "Zombies"
-      const count = amassMatch[2].toLowerCase() === 'x' ? -1 : parseInt(amassMatch[2], 10);
-      // Try to find the Army token in Scryfall data
-      const armyData = tokenData.find(t => t.type_line.toLowerCase().includes('army'));
-      const def: TokenDefinition = armyData
-        ? { ...buildTokenDefFromData(armyData, count, amassMatch[0]), name: `${subtype} Army` }
-        : {
-            count,
-            power: '0', toughness: '0',
-            colors: [], name: `${subtype} Army`,
-            types: ['creature'], keywords: [],
-            rawText: amassMatch[0],
-          };
-      const key = `${def.name}-amass`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        tokens.push(def);
+    if (amassMatch) {
+      // Normalize plural subtype to singular: "Zombies" → "Zombie", "Orcs" → "Orc"
+      const subtype = amassMatch[1].replace(/s$/i, '');
+      const armyName = `${subtype} Army`;
+      if (!existingNames.has(armyName.toLowerCase())) {
+        const count = amassMatch[2].toLowerCase() === 'x' ? -1 : parseInt(amassMatch[2], 10);
+        const armyData = tokenData.find(t => t.type_line.toLowerCase().includes('army'));
+        const def: TokenDefinition = armyData
+          ? { ...buildTokenDefFromData(armyData, count, amassMatch[0]), name: armyName }
+          : {
+              count,
+              power: '0', toughness: '0',
+              colors: ['black'], name: armyName,
+              types: ['creature'], keywords: [],
+              rawText: amassMatch[0],
+            };
+        const key = `${def.name}-amass`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          tokens.push(def);
+        }
       }
     }
 
@@ -488,6 +624,69 @@ export function detectTokens(card: ScryfallCard, tokenData: ScryfallTokenData[] 
         seen.add(key);
         tokens.push(def);
       }
+    }
+
+    // Investigate: creates a Clue artifact token
+    // "investigate" / "investigate twice" / "investigate X times"
+    if (/\binvestigate\b/i.test(ability) && !existingNames.has('clue')) {
+      const timesMatch = ability.match(/\binvestigate\s+(\w+)\s+times?\b/i);
+      let count = 1;
+      if (timesMatch) {
+        const word = timesMatch[1].toLowerCase();
+        count = WORD_TO_NUM[word] ?? parseInt(word, 10);
+        if (isNaN(count)) count = -1;
+      }
+      const clueData = tokenData.find(t => t.name.toLowerCase() === 'clue');
+      const def: TokenDefinition = clueData
+        ? buildTokenDefFromData(clueData, count, 'investigate')
+        : {
+            count,
+            power: '', toughness: '',
+            colors: ['colorless'], name: 'Clue',
+            types: ['artifact'], keywords: [],
+            rawText: 'investigate',
+          };
+      if (!seen.has('clue-investigate')) {
+        seen.add('clue-investigate');
+        tokens.push(def);
+      }
+    }
+
+    // Populate: create a token that's a copy of a creature token you control
+    if (/\bpopulate\b/i.test(ability) && !seen.has('populate')) {
+      seen.add('populate');
+      tokens.push({
+        count: 1,
+        power: '', toughness: '',
+        colors: [], name: 'Copy of creature token',
+        types: ['creature'], keywords: [],
+        rawText: 'populate',
+        isConditional: true,
+        conditionKey: `${card.name}-populate-${conditionCounter++}`,
+        condition: 'Populate (copy a creature token)',
+        conditionType: 'board-state',
+      });
+    }
+  }
+
+  // Post-process: pair replacement tokens ("create Y instead") with their base tokens ("create X").
+  // These are mutually exclusive — only one fires per trigger resolution.
+  // Group them with -or- conditionKeys so the sliding switch UI renders correctly,
+  // and so the base token is NOT created unconditionally (e.g. Ocelot Pride).
+  {
+    const replacementTokens = tokens.filter(t => t.isReplacement && t.isConditional);
+    // Base tokens: anything that isn't itself a replacement (may already be conditional
+    // from an "if it's your turn" or similar trigger qualifier — that gets overwritten below)
+    const baseTokens = tokens.filter(t => !t.isReplacement);
+    for (let i = 0; i < Math.min(replacementTokens.length, baseTokens.length); i++) {
+      const base = baseTokens[i];
+      const repl = replacementTokens[i];
+      base.isConditional = true;
+      base.conditionKey = `${card.name}-or-${conditionCounter++}`;
+      base.condition = base.name;
+      base.conditionType = 'activated-choice';
+      repl.conditionKey = `${card.name}-or-${conditionCounter++}`;
+      repl.conditionType = 'activated-choice';
     }
   }
 

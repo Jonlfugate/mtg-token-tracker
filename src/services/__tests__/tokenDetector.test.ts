@@ -109,7 +109,7 @@ describe('detectTokens', () => {
   });
 
   describe('conditional "instead" tokens', () => {
-    it('detects conditional replacement token', () => {
+    it('detects conditional replacement token — both base and replacement are or-choices', () => {
       const card = makeCard(
         'At the beginning of your upkeep, create a 1/1 white Spirit creature token with flying.\n' +
         'If you\'re the monarch, create a 4/4 white Angel creature token with flying instead.'
@@ -117,11 +117,15 @@ describe('detectTokens', () => {
       const tokens = detectTokens(card);
       expect(tokens.length).toBeGreaterThanOrEqual(2);
 
-      const spirit = tokens.find(t => t.name.toLowerCase().includes('spirit') || (t.power === '1' && !t.isConditional));
-      const angel = tokens.find(t => t.isConditional);
+      const spirit = tokens.find(t => t.name.toLowerCase().includes('spirit'));
+      const angel = tokens.find(t => t.isReplacement);
       expect(spirit).toBeDefined();
       expect(angel).toBeDefined();
-      expect(angel!.isReplacement).toBe(true);
+      // Both are conditional or-choices (mutually exclusive)
+      expect(spirit!.isConditional).toBe(true);
+      expect(angel!.isConditional).toBe(true);
+      expect(spirit!.conditionKey).toMatch(/-or-\d+$/);
+      expect(angel!.conditionKey).toMatch(/-or-\d+$/);
     });
   });
 
@@ -145,16 +149,23 @@ describe('detectTokens', () => {
       expect(copyToken!.isConditional).toBe(true);
     });
 
-    it('does not produce duplicate checkbox for Scute Swarm conditional copy', () => {
+    it('Scute Swarm: Insect and Copy are both conditional or-choices', () => {
       const card = makeCard(
         'Landfall — Whenever a land you control enters, create a 1/1 green Insect creature token.\nIf you control six or more lands, create a token that\'s a copy of Scute Swarm instead.',
         'Scute Swarm'
       );
       const tokens = detectTokens(card);
-      // Should have exactly one insect and one copy, not two conditionals
+      // Both tokens are conditional or-choices — Insect is NOT created unconditionally
       const conditionals = tokens.filter(t => t.isConditional);
-      expect(conditionals).toHaveLength(1);
-      expect(conditionals[0].name).toBe('Copy of Scute Swarm');
+      expect(conditionals).toHaveLength(2);
+      const insect = conditionals.find(t => t.name === 'Insect');
+      const copy = conditionals.find(t => t.name.includes('Scute Swarm'));
+      expect(insect).toBeDefined();
+      expect(copy).toBeDefined();
+      // Same or-group
+      const insectGroup = insect!.conditionKey!.replace(/-\d+$/, '');
+      const copyGroup = copy!.conditionKey!.replace(/-\d+$/, '');
+      expect(insectGroup).toBe(copyGroup);
     });
   });
 
@@ -186,7 +197,7 @@ describe('detectTokens', () => {
       const card = makeCard('Amass Orcs 3');
       const tokens = detectTokens(card);
       expect(tokens).toHaveLength(1);
-      expect(tokens[0].name).toBe('Orcs Army');
+      expect(tokens[0].name).toBe('Orc Army');
       expect(tokens[0].count).toBe(3);
     });
 
@@ -302,17 +313,16 @@ describe('detectTokens', () => {
       expect(snake!.conditionKey).toBeDefined();
     });
 
-    it('generates conditionKey for replacement conditions', () => {
+    it('generates conditionKey for replacement conditions (conditionType becomes activated-choice after or-pairing)', () => {
       const card = makeCard(
         'When this creature enters, create a 1/1 green Insect creature token.\nIf you control six or more lands, create a token that\'s a copy of this creature instead.',
         'Scute Swarm'
       );
       const tokens = detectTokens(card);
       const replacement = tokens.find(t => t.isReplacement);
-      if (replacement) {
-        expect(replacement.conditionType).toBe('replacement');
-        expect(replacement.conditionKey).toBeDefined();
-      }
+      expect(replacement).toBeDefined();
+      expect(replacement!.conditionType).toBe('activated-choice');
+      expect(replacement!.conditionKey).toMatch(/-or-\d+$/);
     });
   });
 

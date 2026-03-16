@@ -1,7 +1,37 @@
-import type { AppState } from '../types';
+import type { AppState, DeckCard } from '../types';
 
 const STORAGE_KEY = 'mtg-token-tracker';
 const SCHEMA_VERSION = 2;
+const SAVED_DECKS_KEY = 'mtg-saved-decks';
+
+export interface SavedDeck {
+  id: string;
+  name: string;
+  deckCards: DeckCard[];
+  rawDecklist: string;
+  savedAt: number;
+}
+
+export function listSavedDecks(): SavedDeck[] {
+  try {
+    const raw = localStorage.getItem(SAVED_DECKS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as SavedDeck[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveDeck(name: string, deckCards: DeckCard[], rawDecklist: string): void {
+  const decks = listSavedDecks();
+  const deck: SavedDeck = { id: crypto.randomUUID(), name, deckCards, rawDecklist, savedAt: Date.now() };
+  localStorage.setItem(SAVED_DECKS_KEY, JSON.stringify([...decks, deck]));
+}
+
+export function deleteSavedDeck(id: string): void {
+  const decks = listSavedDecks().filter(d => d.id !== id);
+  localStorage.setItem(SAVED_DECKS_KEY, JSON.stringify(decks));
+}
 
 interface StorageWrapper {
   version: number;
@@ -56,6 +86,10 @@ function migrateState(data: Record<string, unknown>): void {
       }
     }
   }
+  // Add tokenDeaths if missing
+  if (!('tokenDeaths' in data)) {
+    data.tokenDeaths = {};
+  }
 }
 
 function validateState(data: unknown): AppState | null {
@@ -72,6 +106,3 @@ function validateState(data: unknown): AppState | null {
   return obj as unknown as AppState;
 }
 
-export function clearState(): void {
-  localStorage.removeItem(STORAGE_KEY);
-}

@@ -62,12 +62,15 @@ async function fetchTokenCard(uri: string): Promise<FetchedTokenResult> {
       || data.card_faces?.[0]?.image_uris?.art_crop;
     const normalImg = data.image_uris?.normal
       || data.card_faces?.[0]?.image_uris?.normal;
+    const largeImg = data.image_uris?.large
+      || data.card_faces?.[0]?.image_uris?.large;
     const imageUrl = artCrop || normalImg;
 
     const art: TokenArt | null = imageUrl ? {
       name: data.name,
       imageUrl,
       normalUrl: normalImg || undefined,
+      largeUrl: largeImg || undefined,
       typeLine: data.type_line,
       power: raw.power || undefined,
       toughness: raw.toughness || undefined,

@@ -38,7 +38,19 @@ const SUPPORT_PATTERNS: SupportPattern[] = [
 
 /** Detect condition scope — what token types does this effect apply to? */
 function detectCondition(ability: string): string | undefined {
-  const lower = ability.toLowerCase();
+  // Check for named artifact token type restrictions.
+  // Pattern: "would create ... [Type] token" (e.g., Xorn: Treasure-only)
+  // If multiple distinct artifact types are mentioned (e.g. Academy Manufactor: Clue, Food, Treasure)
+  // don't restrict to any single type — the effect applies to all of them.
+  const artifactTypes = ['treasure', 'food', 'clue', 'blood', 'map', 'powerstone', 'junk', 'gold'];
+  const mentionedTypes = artifactTypes.filter(t => new RegExp(`\\b${t}\\b`, 'i').test(ability));
+  if (mentionedTypes.length >= 3) return undefined;
+
+  const wouldCreateMatch = ability.match(/would\s+create[^.]*?\b(treasure|food|clue|blood|map|powerstone|junk|gold)\b/i);
+  if (wouldCreateMatch) {
+    return `${wouldCreateMatch[1].toLowerCase()} tokens`;
+  }
+
   // Check if the effect is restricted to creature tokens only
   // Look for "creature token" without other token type mentions nearby
   if (/creature\s+tokens?/i.test(ability)) {

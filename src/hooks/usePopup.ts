@@ -19,8 +19,8 @@ interface UsePopupOptions {
   popupWidth?: number;
   /** Estimated popup height in px */
   popupHeight?: number;
-  /** Prefer placing popup to the side (for card rows) vs below (for inline thumbs) */
-  placement?: 'side' | 'below';
+  /** 'mouse' = near cursor (desktop card rows), 'below' = below/above element (thumbs, touch) */
+  placement?: 'mouse' | 'below';
 }
 
 export function usePopup(options: UsePopupOptions = {}) {
@@ -29,24 +29,30 @@ export function usePopup(options: UsePopupOptions = {}) {
   const [popupStyle, setPopupStyle] = useState<PopupStyle>({});
   const ref = useRef<HTMLElement>(null);
 
-  const calcPosition = useCallback(() => {
+  const calcPosition = useCallback((mouseX?: number, mouseY?: number) => {
     if (!ref.current) return;
     const rect = ref.current.getBoundingClientRect();
     const style: PopupStyle = {};
 
-    if (placement === 'side') {
-      // Desktop card row: popup appears to the side
-      if (rect.right + popupWidth + 10 > window.innerWidth) {
-        style.left = 'auto';
-        style.right = '100%';
-        style.marginRight = '10px';
-      } else {
-        style.left = '100%';
-        style.marginLeft = '10px';
+    if (placement === 'mouse' && mouseX !== undefined && mouseY !== undefined) {
+      const offset = 16;
+
+      // Horizontal: prefer right of cursor, flip left if it clips
+      let left = mouseX + offset;
+      if (left + popupWidth > window.innerWidth - 8) {
+        left = mouseX - popupWidth - offset;
       }
-      let top = rect.top;
-      if (top + popupHeight > window.innerHeight) top = window.innerHeight - popupHeight - 8;
+      if (left < 8) left = 8;
+
+      // Vertical: prefer below cursor, flip above if it clips
+      let top = mouseY + offset;
+      if (top + popupHeight > window.innerHeight - 8) {
+        top = mouseY - popupHeight - offset;
+      }
       if (top < 8) top = 8;
+
+      // Convert from viewport coords to element-relative (element is position:relative)
+      style.left = `${left - rect.left}px`;
       style.top = `${top - rect.top}px`;
     } else {
       // Below/above: for token thumbs and mobile card rows
@@ -70,9 +76,9 @@ export function usePopup(options: UsePopupOptions = {}) {
     setPopupStyle(style);
   }, [popupWidth, popupHeight, placement]);
 
-  const handleMouseEnter = useCallback(() => {
+  const handleMouseEnter = useCallback((e: React.MouseEvent) => {
     if (isTouch) return;
-    calcPosition();
+    calcPosition(e.clientX, e.clientY);
     setShow(true);
   }, [calcPosition]);
 
@@ -110,7 +116,6 @@ export function usePopup(options: UsePopupOptions = {}) {
       onMouseLeave: handleMouseLeave,
       onClick: handleTap,
     },
-    setShow,
   };
 }
 

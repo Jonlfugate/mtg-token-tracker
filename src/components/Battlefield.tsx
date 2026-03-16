@@ -4,6 +4,7 @@ import { CardRow } from './CardRow';
 import { XValueModal } from './XValueModal';
 import type { StandaloneToken, TokenDefinition } from '../types';
 import { COLOR_BORDER_MAP, TRIGGER_GROUP_ORDER, TRIGGER_GROUP_LABELS } from '../constants';
+import { formatCount } from '../utils/formatCount';
 
 function getTokenBorderColor(tokenDef: TokenDefinition): string {
   const colors = tokenDef.colors.filter(c => c !== 'colorless');
@@ -36,7 +37,7 @@ export function Battlefield() {
     for (const [deckIdx, instanceIds] of cardMap) {
       const card = deckCards[deckIdx];
       let groupKey: string;
-      if (card.category === 'support') {
+      if (card.category === 'support' || card.category === 'both') {
         groupKey = 'support';
       } else if (card.triggerInfo) {
         groupKey = card.triggerInfo.type;
@@ -143,8 +144,16 @@ export function Battlefield() {
     dispatch({ type: 'CLEAR_ALL_TOKENS' });
   }, [dispatch]);
 
+  const handleRemoveAllInstances = useCallback((deckCardIndex: number) => {
+    dispatch({ type: 'REMOVE_ALL_INSTANCES', payload: { deckCardIndex } });
+  }, [dispatch]);
+
   const handleClearTurnTokens = useCallback(() => {
     dispatch({ type: 'CLEAR_TURN_TOKENS' });
+  }, [dispatch]);
+
+  const handleKillToken = useCallback((id: string) => {
+    dispatch({ type: 'KILL_TOKEN', payload: { id } });
   }, [dispatch]);
 
   // Count total creatures on battlefield (cards + creature tokens)
@@ -166,6 +175,20 @@ export function Battlefield() {
     () => standaloneTokens.reduce((sum, t) => sum + t.finalCount, 0),
     [standaloneTokens]
   );
+
+  const activeMultipliers = useMemo(() => {
+    const result: Array<{ cardName: string; effect: { type: string; factor: number; condition?: string } }> = [];
+    for (const bc of battlefield) {
+      const card = deckCards[bc.deckCardIndex];
+      if (card.category !== 'support' && card.category !== 'both') continue;
+      for (const effect of card.supportEffects) {
+        if (effect.type === 'multiplier' || effect.type === 'additional') {
+          result.push({ cardName: card.scryfallData.name, effect });
+        }
+      }
+    }
+    return result;
+  }, [battlefield, deckCards]);
 
   const groupedTokens = useMemo(() => {
     const currentTurn = state.currentTurn;
@@ -189,6 +212,13 @@ export function Battlefield() {
     return Array.from(grouped.values());
   }, [standaloneTokens, state.currentTurn]);
 
+  const tokenBreakdown = useMemo(() => {
+    return [...groupedTokens]
+      .sort((a, b) => b.totalCount - a.totalCount)
+      .map(g => `${formatCount(g.totalCount)} ${g.token.tokenDef.name}`)
+      .join(' · ');
+  }, [groupedTokens]);
+
   // Animation detection — separated from useMemo to avoid side effects in pure computation
   useEffect(() => {
     const newCounts = new Map<string, number>();
@@ -197,7 +227,7 @@ export function Battlefield() {
       const key = g.ids[0];
       newCounts.set(key, g.totalCount);
       const prev = prevTokenCountsRef.current.get(key);
-      if (prev !== undefined && prev !== g.totalCount) {
+      if (prev === undefined || prev !== g.totalCount) {
         toAnimate.add(key);
       }
     }
@@ -216,7 +246,7 @@ export function Battlefield() {
     return (
       <div className="battlefield-panel">
         <div className="battlefield-header">
-          <h2>Battlefield</h2>
+          <h2>Battlefield <span className="turn-badge">Turn {state.currentTurn}</span></h2>
         </div>
         <p className="empty-state">Play cards from your decklist to see them here.</p>
       </div>
@@ -238,6 +268,7 @@ export function Battlefield() {
           )}
           <button
             className="land-played-btn"
+            data-tutorial-target="land-played-btn"
             onClick={handleLandPlayed}
             disabled={!hasLandfall}
             title="Trigger all landfall abilities"
@@ -246,6 +277,7 @@ export function Battlefield() {
           </button>
           <button
             className="new-turn-btn"
+            data-tutorial-target="new-turn-btn"
             onClick={handleNewTurn}
             title="Advance turn and trigger all upkeep/combat abilities"
           >
@@ -268,6 +300,20 @@ export function Battlefield() {
         </div>
       </div>
 
+      {/* Support multipliers bar */}
+      {activeMultipliers.length > 0 && (
+        <div className="support-bar">
+          <span className="support-bar-label">Active:</span>
+          {activeMultipliers.map((item, i) => (
+            <span key={i} className="support-chip">
+              {item.effect.type === 'multiplier'
+                ? `×${item.effect.factor} ${item.cardName}${item.effect.condition ? ` (${item.effect.condition})` : ''}`
+                : `+${item.effect.factor} ${item.cardName}${item.effect.condition ? ` (${item.effect.condition})` : ''}`}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Populate mode banner */}
       {populateMode && (
         <div className="populate-banner">
@@ -282,16 +328,31 @@ export function Battlefield() {
           <h4>Turn History</h4>
           {state.history.length === 0 ? (
             <p className="empty-state">No actions yet.</p>
-          ) : (
-            <ul>
-              {[...state.history].reverse().map((entry, i) => (
-                <li key={i} className="history-entry">
-                  <span className="history-turn">T{entry.turn}</span>
-                  <span className="history-label">{entry.label}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          ) : (() => {
+            // Group by turn number, newest turn first
+            const byTurn = new Map<number, typeof state.history>();
+            for (const entry of state.history) {
+              if (!byTurn.has(entry.turn)) byTurn.set(entry.turn, []);
+              byTurn.get(entry.turn)!.push(entry);
+            }
+            const turns = Array.from(byTurn.entries()).sort((a, b) => b[0] - a[0]);
+            return (
+              <div className="history-turns">
+                {turns.map(([turn, entries]) => (
+                  <div key={turn} className="history-turn-group">
+                    <div className="history-turn-header">Turn {turn}</div>
+                    <ul>
+                      {[...entries].reverse().map((entry, i) => (
+                        <li key={i} className="history-entry">
+                          <span className="history-label">{entry.label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -300,7 +361,11 @@ export function Battlefield() {
         <div className={`battlefield-cards${populateMode ? ' populate-dimmed' : ''}`}>
           <h3>Cards in Play</h3>
           {triggerGroups.map(group => (
-            <div key={group.key} className="trigger-group">
+            <div
+              key={group.key}
+              className="trigger-group"
+              data-tutorial-target={group.key === 'landfall' ? 'battlefield-section-landfall' : undefined}
+            >
               <h4 className={`trigger-group-label trigger-group-${group.key}`}>{group.label}</h4>
               {group.cards.map(({ deckIdx, instanceIds }) => {
                 const card = deckCards[deckIdx];
@@ -313,10 +378,14 @@ export function Battlefield() {
                 const conditionsMet = firstBc?.conditionsMet ?? {};
                 const conditions = conditionalTokens.map(t => {
                   const key = t.conditionKey || t.name;
+                  // "or" choice tokens share a group (conditionKey pattern: "{card}-or-{N}")
+                  const orGroupMatch = key.match(/^(.+-or)-\d+$/);
                   return {
                     tokenName: key,
                     label: t.condition || t.name,
                     checked: conditionsMet[key] ?? false,
+                    group: orGroupMatch ? orGroupMatch[1] : undefined,
+                    isReplacement: !!t.isReplacement,
                   };
                 });
 
@@ -333,12 +402,24 @@ export function Battlefield() {
                     extraLabel={counterLabel || undefined}
                     onRemove={() => handleRemoveCard(instanceIds[instanceIds.length - 1])}
                     onAdd={() => handleAddCard(deckIdx)}
+                    onRemoveAll={() => handleRemoveAllInstances(deckIdx)}
                     showRemoveButton
                     onTrigger={isGenerator ? () => handleTrigger(deckIdx) : undefined}
                     triggerLabel={triggerLabel}
                     conditions={conditions}
                     onToggleCondition={(tokenName) => {
-                      // Toggle condition on all instances
+                      const cond = conditions.find(c => c.tokenName === tokenName);
+                      // For "or" groups: deselect siblings before toggling
+                      if (cond?.group) {
+                        const checkedSiblings = conditions.filter(
+                          c => c.group === cond.group && c.tokenName !== tokenName && c.checked
+                        );
+                        for (const sibling of checkedSiblings) {
+                          for (const id of instanceIds) {
+                            dispatch({ type: 'TOGGLE_CONDITION', payload: { instanceId: id, tokenName: sibling.tokenName } });
+                          }
+                        }
+                      }
                       for (const id of instanceIds) {
                         dispatch({ type: 'TOGGLE_CONDITION', payload: { instanceId: id, tokenName } });
                       }
@@ -354,9 +435,10 @@ export function Battlefield() {
 
       {/* All tokens — merged identical tokens */}
       {groupedTokens.length > 0 && (
-        <div className="token-battlefield">
+        <div className="token-battlefield" data-tutorial-target="token-battlefield">
           <div className="token-header">
-            <h3>Tokens ({totalTokens})</h3>
+            <h3>Tokens ({formatCount(totalTokens)})</h3>
+            {tokenBreakdown && <span className="token-breakdown">{tokenBreakdown}</span>}
             <div className="token-bulk-actions">
               {standaloneTokens.some(t => t.createdOnTurn === state.currentTurn) && (
                 <button className="bulk-clear-btn secondary" onClick={handleClearTurnTokens} title="Remove tokens created this turn">
@@ -370,12 +452,18 @@ export function Battlefield() {
           </div>
           <div className="token-grid">
             {groupedTokens.map(({ ids, totalCount, thisTurnCount, sources, breakdowns, token }) => {
+              const deathCount = state.tokenDeaths[token.tokenDef.name] ?? 0;
+              const isCreature = token.tokenDef.types.includes('creature');
               const copySource = token.copyOfDeckIndex !== undefined
                 ? deckCards[token.copyOfDeckIndex]
                 : undefined;
-              const copyArtUrl = copySource?.scryfallData.image_uris?.art_crop
+              const copyArtUrl = copySource?.scryfallData.image_uris?.large
+                || copySource?.scryfallData.image_uris?.normal
+                || copySource?.scryfallData.image_uris?.art_crop
+                || copySource?.scryfallData.card_faces?.[0]?.image_uris?.large
+                || copySource?.scryfallData.card_faces?.[0]?.image_uris?.normal
                 || copySource?.scryfallData.card_faces?.[0]?.image_uris?.art_crop;
-              const artUrl = token.tokenArt?.imageUrl || copyArtUrl;
+              const artUrl = token.tokenArt?.largeUrl || token.tokenArt?.normalUrl || token.tokenArt?.imageUrl || copyArtUrl;
               const artAlt = token.tokenArt?.name || copySource?.scryfallData.name || token.tokenDef.name;
               const hasPT = token.tokenDef.power && token.tokenDef.toughness;
               const keywords = token.tokenDef.keywords?.filter(k => k) ?? [];
@@ -412,18 +500,9 @@ export function Battlefield() {
                       className="token-art"
                       loading="lazy"
                     />
-                    <div className="token-count-overlay">
-                      <span className="token-count-number">{totalCount}</span>
-                    </div>
-                    {hasPT && (
-                      <div className="token-pt-badge">
-                        {token.tokenDef.power}/{token.tokenDef.toughness}
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <div className="token-art-placeholder">
-                    <span className="token-count-number">{totalCount}</span>
                     {hasPT && (
                       <div className="token-pt-badge-placeholder">
                         {token.tokenDef.power}/{token.tokenDef.toughness}
@@ -432,9 +511,10 @@ export function Battlefield() {
                   </div>
                 )}
                 <div className="token-tile-info">
-                  <span className="token-tile-name">
-                    {token.tokenDef.name}
-                  </span>
+                  <div className="token-count-row">
+                    <span className="token-count-number" title={totalCount >= 10_000 ? totalCount.toLocaleString() : undefined}>{formatCount(totalCount)}</span>
+                    <span className="token-tile-name">{token.tokenDef.name}</span>
+                  </div>
                   {keywords.length > 0 && (
                     <span className="token-keywords">
                       {keywords.join(', ')}
@@ -444,13 +524,18 @@ export function Battlefield() {
                     from {sources.size === 1 ? Array.from(sources)[0] : `${sources.size} sources`}
                   </span>
                   {thisTurnCount > 0 && thisTurnCount < totalCount && (
-                    <span className="token-tile-turn-info">+{thisTurnCount} this turn</span>
+                    <span className="token-tile-turn-info">+{formatCount(thisTurnCount)} this turn</span>
+                  )}
+                  {deathCount > 0 && (
+                    <span className="token-death-count" title={`${deathCount} died this turn`}>
+                      &#x2620; {deathCount} died
+                    </span>
                   )}
                   <div className="token-adjust-btns">
                     <button
                       className="token-adjust-btn"
                       onClick={() => dispatch({ type: 'ADJUST_TOKEN', payload: { id: ids[0], delta: -1 } })}
-                      title="Remove one"
+                      title="Remove one (exile / bounce)"
                       aria-label={`Remove one ${token.tokenDef.name} token`}
                     >
                       &minus;
@@ -463,6 +548,16 @@ export function Battlefield() {
                     >
                       +
                     </button>
+                    {isCreature && (
+                      <button
+                        className="token-kill-btn"
+                        onClick={() => handleKillToken(ids[0])}
+                        title="Kill one (dies / destroyed)"
+                        aria-label={`Kill one ${token.tokenDef.name} token`}
+                      >
+                        &#x2620;
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

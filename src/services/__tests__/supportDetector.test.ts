@@ -131,4 +131,31 @@ describe('detectSupport', () => {
     const results = detectSupport(card);
     expect(results).toHaveLength(1);
   });
+
+  it('Academy Manufactor: condition is undefined (not restricted to one artifact type)', () => {
+    const card = makeCard(
+      'If you would create a Clue, Food, or Treasure token, instead create one of each of those tokens.'
+    );
+    const results = detectSupport(card);
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results[0].condition).toBeUndefined();
+  });
+
+  it('Xorn: condition is restricted to treasure tokens only', () => {
+    const card = makeCard(
+      'If you would create one or more Treasure tokens, instead create that many plus one Treasure tokens.'
+    );
+    const results = detectSupport(card);
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results[0].condition).toBe('treasure tokens');
+  });
+
+  it('detects Xorn as additional +1', () => {
+    const card = makeCard(
+      'If you would create one or more Treasure tokens, instead create that many plus one Treasure tokens.'
+    );
+    const results = detectSupport(card);
+    expect(results[0].type).toBe('additional');
+    expect(results[0].factor).toBe(1);
+  });
 });

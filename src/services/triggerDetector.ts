@@ -1,7 +1,7 @@
 import type { ScryfallCard } from '../types';
 import { getOracleText, splitAbilities } from './cardUtils';
 
-export type TriggerType = 'upkeep' | 'tap' | 'landfall' | 'combat' | 'death' | 'cast' | 'activate' | 'etb' | 'other';
+export type TriggerType = 'upkeep' | 'end-step' | 'tap' | 'landfall' | 'combat' | 'death' | 'cast' | 'activate' | 'etb' | 'other';
 
 interface TriggerPattern {
   regex: RegExp;
@@ -15,7 +15,8 @@ const TRIGGER_PATTERNS: TriggerPattern[] = [
   { regex: /whenever (?:a |this )?land.*(?:you control )?enters/i, type: 'landfall', label: 'Landfall' },
   { regex: /landfall/i, type: 'landfall', label: 'Landfall' },
   { regex: /at the beginning of (?:each|your) upkeep/i, type: 'upkeep', label: 'Upkeep' },
-  { regex: /at the beginning of (?:each|your) (?:end step|first main phase)/i, type: 'upkeep', label: 'End Step' },
+  { regex: /at the beginning of (?:each|your) end step/i, type: 'end-step', label: 'End Step' },
+  { regex: /at the beginning of (?:each|your) first main phase/i, type: 'upkeep', label: 'Main Phase' },
   { regex: /at the beginning of combat/i, type: 'combat', label: 'Combat' },
   { regex: /whenever.*(?:attacks?|enters .* attacking)/i, type: 'combat', label: 'Attack' },
   { regex: /whenever.*deals? combat damage/i, type: 'combat', label: 'Combat Damage' },

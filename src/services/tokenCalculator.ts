@@ -29,14 +29,35 @@ export function calculateTokens(
   return generator.tokens.map(tokenDef => {
     const baseCount = tokenDef.count === -1 ? variableX : tokenDef.count;
 
+    // Zero-count means "no tokens created this time" (e.g., Hare Apparent with no other copies
+    // in play). Support effects must not inflate this to a non-zero value.
+    if (baseCount === 0) {
+      return {
+        sourceCard: generator,
+        baseTokens: tokenDef,
+        tokenArt: generator.tokenArt.find(a => a.name.toLowerCase() === tokenDef.name.toLowerCase()) ?? generator.tokenArt[0],
+        activeMultipliers: [],
+        finalCount: 0,
+        breakdown: '0',
+      };
+    }
+
     let count = baseCount;
     const breakdownParts: string[] = [String(baseCount)];
     const activeMultipliers: TokenCalculationResult['activeMultipliers'] = [];
 
     for (const { card: support, effect } of supportEffects) {
-      // Check condition match (e.g., "creature tokens" only)
-      if (effect.condition === 'creature tokens' && !tokenDef.types.includes('creature')) {
-        continue;
+      // Check condition match
+      if (effect.condition) {
+        const cond = effect.condition.toLowerCase();
+        if (cond === 'creature tokens') {
+          // Type-based restriction: only apply to creature tokens
+          if (!tokenDef.types.includes('creature')) continue;
+        } else if (cond.endsWith(' tokens')) {
+          // Named token restriction (e.g., 'treasure tokens' from Xorn)
+          const requiredName = cond.slice(0, -' tokens'.length);
+          if (tokenDef.name.toLowerCase() !== requiredName) continue;
+        }
       }
 
       activeMultipliers.push({ card: support, effect });

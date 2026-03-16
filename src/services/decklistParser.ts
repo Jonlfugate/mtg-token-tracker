@@ -1,6 +1,6 @@
 import type { DecklistEntry } from '../types';
 
-const CARD_LINE_REGEX = /^(\d+)x?\s+(.+?)(?:\s+\(([A-Z0-9]+)\))?(?:\s+(\d+))?$/;
+const CARD_LINE_REGEX = /^(\d+)x?\s+(.+?)(?:\s+\([A-Z0-9]+\))?(?:\s+\d+)?$/;
 
 const SECTION_HEADERS = [
   'sideboard', 'commander', 'companion', 'maybeboard',
@@ -24,8 +24,6 @@ export function parseMoxfieldDecklist(text: string): DecklistEntry[] {
       entries.push({
         quantity: parseInt(match[1], 10),
         name: match[2].trim(),
-        setCode: match[3] || undefined,
-        collectorNumber: match[4] || undefined,
       });
     }
   }

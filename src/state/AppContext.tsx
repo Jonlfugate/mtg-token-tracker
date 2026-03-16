@@ -27,14 +27,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return initialState;
   });
 
-  // Debounced save to localStorage
+  // Debounced save to localStorage — only triggered by fields that are actually persisted.
+  // Excludes undoStack, pendingPopulate, pendingXTriggers, history, importStatus (non-persistent).
+  // stateRef always holds the latest state so the timer saves a fully up-to-date snapshot.
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   useEffect(() => {
     if (state.importStatus === 'fetching') return;
     clearTimeout(saveTimeout.current);
-    saveTimeout.current = setTimeout(() => saveState(state), 500);
+    saveTimeout.current = setTimeout(() => saveState(stateRef.current), 500);
     return () => clearTimeout(saveTimeout.current);
-  }, [state]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.battlefield, state.standaloneTokens, state.deckCards, state.currentTurn, state.tokenDeaths, state.rawDecklist, state.importStatus]);
 
   return (
     <AppContext.Provider value={{ state, dispatch }}>
