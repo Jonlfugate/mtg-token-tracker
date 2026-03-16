@@ -50,36 +50,6 @@ function findTokenArt(tokenDef: TokenDefinition, card: DeckCard): { thumbUrl?: s
   return {};
 }
 
-function TokenThumb({ tokenDef, thumbUrl, popupUrl }: { tokenDef: TokenDefinition; thumbUrl?: string; popupUrl?: string }) {
-  const { ref, show, popupStyle, handlers } = usePopup({
-    popupWidth: 160,
-    popupHeight: 230,
-    placement: 'below',
-  });
-
-  const label = `${tokenDef.count === -1 ? 'X' : tokenDef.count}× ${tokenDef.power ? `${tokenDef.power}/${tokenDef.toughness} ` : ''}${tokenDef.name}`;
-
-  return (
-    <span
-      ref={ref as React.RefObject<HTMLSpanElement>}
-      className="token-thumb"
-      {...handlers}
-      title={label}
-    >
-      {thumbUrl ? (
-        <img src={thumbUrl} alt={tokenDef.name} className="token-thumb-img" loading="lazy" />
-      ) : (
-        <span className="token-thumb-text">{tokenDef.name.charAt(0)}</span>
-      )}
-      {show && (
-        <div className="token-thumb-popup" style={popupStyle}>
-          {popupUrl && <img src={popupUrl} alt={tokenDef.name} />}
-          <span className="token-thumb-popup-label">{label}</span>
-        </div>
-      )}
-    </span>
-  );
-}
 
 function CardPopupTokens({ card }: { card: DeckCard }) {
   const tokens = card.tokens.filter(t => t.countMode !== 'double-tokens' && t.countMode !== 'copy-turn-tokens');
