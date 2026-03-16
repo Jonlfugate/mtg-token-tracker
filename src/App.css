@@ -1954,6 +1954,31 @@ button.danger:hover:not(:disabled) {
     flex-shrink: 1;
   }
 
+  /* Card image popup: constrain to screen, stack tokens below card image */
+  .card-image-popup {
+    max-width: calc(100vw - 16px);
+    flex-wrap: wrap;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  .card-image-popup > img {
+    width: min(160px, 40vw);
+  }
+
+  .popup-token-row {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .popup-token-img {
+    width: min(110px, 28vw);
+  }
+
+  .popup-token-name {
+    max-width: min(110px, 28vw);
+  }
+
   .deck-import textarea {
     rows: 6;
     font-size: 0.8rem;

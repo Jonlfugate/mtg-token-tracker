@@ -64,11 +64,14 @@ export function usePopup(options: UsePopupOptions = {}) {
         style.top = '100%';
         style.marginTop = '6px';
       }
-      // Center horizontally, clamped to viewport
+      // Center horizontally, clamped to viewport.
+      // Right-clamp first, then left-clamp — if the popup is wider than the
+      // viewport the left-clamp wins and pins it to the left edge (with CSS
+      // max-width + overflow-x handling the rest).
       const center = rect.left + rect.width / 2;
       let leftOffset = center - popupWidth / 2;
-      if (leftOffset < 8) leftOffset = 8;
       if (leftOffset + popupWidth > window.innerWidth - 8) leftOffset = window.innerWidth - popupWidth - 8;
+      if (leftOffset < 8) leftOffset = 8;
       style.left = `${leftOffset - rect.left}px`;
       style.transform = 'none';
     }
