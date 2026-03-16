@@ -1937,10 +1937,21 @@ button.danger:hover:not(:disabled) {
 
   .condition-toggle {
     padding: 0.2rem 0;
+    flex-basis: 100%;
+  }
+
+  .condition-or-switch-row {
+    flex-basis: 100%;
+  }
+
+  .condition-or-segment {
+    flex-basis: 100%;
   }
 
   .condition-label {
     max-width: 150px;
+    min-width: 0;
+    flex-shrink: 1;
   }
 
   .deck-import textarea {
